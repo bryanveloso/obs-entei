@@ -55,12 +55,48 @@ function(_setup_obs_studio)
   if(OS_WINDOWS)
     set(_cmake_generator "${CMAKE_GENERATOR}")
     set(_cmake_arch "-A ${arch},version=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
-    set(_cmake_extra "-DCMAKE_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION} -DCMAKE_ENABLE_SCRIPTING=OFF")
+    set(_cmake_extra 
+      "-DCMAKE_SYSTEM_VERSION=${CMAKE_SYSTEM_VERSION}"
+      "-DCMAKE_ENABLE_SCRIPTING=OFF"
+    )
   elseif(OS_MACOS)
     set(_cmake_generator "Xcode")
     set(_cmake_arch "-DCMAKE_OSX_ARCHITECTURES:STRING='arm64;x86_64'")
-    set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+
+    # Get SDK version to pass to OBS
+    execute_process(
+      COMMAND xcrun --sdk macosx --show-sdk-version
+      OUTPUT_VARIABLE MACOS_SDK_VERSION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    # Set environment variable that OBS's CMake might use
+    set(ENV{MACOSX_DEPLOYMENT_TARGET} "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+
+    # Get the actual SDK path
+    execute_process(
+      COMMAND xcrun --sdk macosx --show-sdk-path
+      OUTPUT_VARIABLE MACOS_SDK_PATH
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    
+    # Create a list instead of a string
+    set(_cmake_extra 
+      "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}"
+      "-DCMAKE_OSX_SYSROOT=${MACOS_SDK_PATH}"
+    )
+  else()
+    # Linux/other platforms
+    set(_cmake_extra "")
   endif()
+
+  # Debug output to check variables
+  if(OS_MACOS)
+    message(STATUS "CMAKE_OSX_DEPLOYMENT_TARGET: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    message(STATUS "XCODE_VERSION: ${XCODE_VERSION}")
+    message(STATUS "MACOS_SDK_VERSION: ${MACOS_SDK_VERSION}")
+  endif()
+  message(STATUS "_cmake_extra: ${_cmake_extra}")
 
   message(STATUS "Configure ${label} (${arch})")
   execute_process(

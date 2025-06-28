@@ -225,7 +225,7 @@ static void *websocket_thread(void *data)
             FD_ZERO(&read_fds);
             FD_SET(client->socket_fd, &read_fds);
             
-            int result = select(client->socket_fd + 1, &read_fds, NULL, NULL, &tv);
+            int result = select((int)(client->socket_fd + 1), &read_fds, NULL, NULL, &tv);
             if (result > 0 && FD_ISSET(client->socket_fd, &read_fds)) {
                 int received = recv(client->socket_fd, client->recv_buffer, BUFFER_SIZE, 0);
                 if (received > 0) {
