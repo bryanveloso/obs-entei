@@ -32,7 +32,93 @@ struct entei_caption_provider {
 	struct dstr pending_caption;
 };
 
-// Simple JSON parser for our specific format
+// Thread-local storage for JSON parsing results
+static __thread char tls_type_buf[64];
+static __thread char tls_text_buf[4096];
+
+// Safe JSON field extraction with bounds checking
+static bool extract_json_string(const char *json, const char *field_name, char *output, size_t output_size)
+{
+	if (!json || !field_name || !output || output_size == 0)
+		return false;
+
+	// Find field
+	char search_str[128];
+	snprintf(search_str, sizeof(search_str), "\"%s\"", field_name);
+	const char *field_start = strstr(json, search_str);
+	if (!field_start)
+		return false;
+
+	// Find colon after field name
+	const char *colon = strchr(field_start + strlen(search_str), ':');
+	if (!colon)
+		return false;
+
+	// Skip whitespace after colon
+	const char *value_start = colon + 1;
+	while (*value_start && (*value_start == ' ' || *value_start == '\t'))
+		value_start++;
+
+	// Check if it's a string value
+	if (*value_start != '"')
+		return false;
+	value_start++;
+
+	// Find end of string value
+	const char *value_end = value_start;
+	while (*value_end) {
+		if (*value_end == '"' && *(value_end - 1) != '\\')
+			break;
+		value_end++;
+	}
+
+	if (*value_end != '"')
+		return false;
+
+	// Calculate length and check bounds
+	size_t len = value_end - value_start;
+	if (len >= output_size)
+		len = output_size - 1;
+
+	// Copy with escape sequence handling
+	size_t out_pos = 0;
+	for (size_t i = 0; i < len && out_pos < output_size - 1; i++) {
+		if (value_start[i] == '\\' && i + 1 < len) {
+			switch (value_start[i + 1]) {
+			case 'n':
+				output[out_pos++] = '\n';
+				i++;
+				break;
+			case 'r':
+				output[out_pos++] = '\r';
+				i++;
+				break;
+			case 't':
+				output[out_pos++] = '\t';
+				i++;
+				break;
+			case '"':
+				output[out_pos++] = '"';
+				i++;
+				break;
+			case '\\':
+				output[out_pos++] = '\\';
+				i++;
+				break;
+			default:
+				output[out_pos++] = value_start[i];
+				break;
+			}
+		} else {
+			output[out_pos++] = value_start[i];
+		}
+	}
+	output[out_pos] = '\0';
+
+	return true;
+}
+
+// Safe JSON parser with proper bounds checking
 static bool parse_transcription_json(const char *json, const char **type, const char **text, bool *is_final)
 {
 	// Default values
@@ -40,58 +126,29 @@ static bool parse_transcription_json(const char *json, const char **type, const 
 	*text = NULL;
 	*is_final = true;
 
-	// Find "type" field
-	const char *type_start = strstr(json, "\"type\"");
-	if (type_start) {
-		type_start = strchr(type_start + 6, ':');
-		if (type_start) {
-			type_start = strchr(type_start, '"');
-			if (type_start) {
-				type_start++;
-				const char *type_end = strchr(type_start, '"');
-				if (type_end) {
-					static char type_buf[64];
-					size_t len = type_end - type_start;
-					if (len < sizeof(type_buf)) {
-						memcpy(type_buf, type_start, len);
-						type_buf[len] = '\0';
-						*type = type_buf;
-					}
-				}
-			}
-		}
+	// Validate input
+	if (!json || strlen(json) > 65536) // Reasonable max JSON size
+		return false;
+
+	// Extract type field
+	if (extract_json_string(json, "type", tls_type_buf, sizeof(tls_type_buf))) {
+		*type = tls_type_buf;
 	}
 
-	// Find "text" field
-	const char *text_start = strstr(json, "\"text\"");
-	if (text_start) {
-		text_start = strchr(text_start + 6, ':');
-		if (text_start) {
-			text_start = strchr(text_start, '"');
-			if (text_start) {
-				text_start++;
-				const char *text_end = strchr(text_start, '"');
-				if (text_end) {
-					static char text_buf[4096];
-					size_t len = text_end - text_start;
-					if (len < sizeof(text_buf)) {
-						memcpy(text_buf, text_start, len);
-						text_buf[len] = '\0';
-						*text = text_buf;
-					}
-				}
-			}
-		}
+	// Extract text field
+	if (extract_json_string(json, "text", tls_text_buf, sizeof(tls_text_buf))) {
+		*text = tls_text_buf;
 	}
 
-	// Find "is_final" field
+	// Find is_final field
 	const char *final_start = strstr(json, "\"is_final\"");
 	if (final_start) {
-		final_start = strchr(final_start + 10, ':');
-		if (final_start) {
-			while (*final_start && (*final_start == ' ' || *final_start == ':'))
-				final_start++;
-			if (strncmp(final_start, "false", 5) == 0) {
+		const char *colon = strchr(final_start + 10, ':');
+		if (colon) {
+			const char *value = colon + 1;
+			while (*value && (*value == ' ' || *value == '\t'))
+				value++;
+			if (strncmp(value, "false", 5) == 0) {
 				*is_final = false;
 			}
 		}

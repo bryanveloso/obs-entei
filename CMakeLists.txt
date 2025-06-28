@@ -76,6 +76,32 @@ endif()
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/websocket-client.c src/entei-caption-provider.c)
 
+# Add compiler warnings for better code quality
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+  target_compile_options(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE
+      -Wall
+      -Wextra
+      -Wpedantic
+      -Wformat=2
+      -Wno-unused-parameter
+      -Wstrict-prototypes
+      -Wold-style-definition
+      -Werror=pointer-arith
+      -Werror=implicit-function-declaration
+      -Werror=format-security
+  )
+elseif(MSVC)
+  target_compile_options(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE
+      /W4
+      /wd4100 # unreferenced formal parameter
+      /wd4996 # deprecated functions
+  )
+endif()
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
 # Install locale files

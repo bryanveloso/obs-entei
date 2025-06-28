@@ -61,13 +61,14 @@ static void entei_settings_update(void *data, obs_data_t *settings)
 	}
 
 	// Save settings to file
-	const char *settings_json = obs_data_get_json(settings);
+	char *settings_json = obs_data_get_json(settings);
 	if (settings_json) {
 		char *file = obs_module_config_path("settings.json");
 		if (file) {
 			os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
 			bfree(file);
 		}
+		bfree(settings_json);
 	}
 }
 

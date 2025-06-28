@@ -5,9 +5,12 @@
 #include <util/platform.h>
 #include <util/dstr.h>
 #include <util/darray.h>
+#include <util/base.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <time.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -24,6 +27,11 @@
 
 #define RECONNECT_DELAY_MS 5000
 #define BUFFER_SIZE 65536
+
+#ifdef _WIN32
+static volatile long ws_init_count = 0;
+static pthread_mutex_t ws_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 struct websocket_client {
 	char *url;
@@ -57,8 +65,42 @@ struct websocket_client {
 	struct dstr message_buffer;
 };
 
+static bool validate_hostname(const char *hostname, size_t len)
+{
+	if (len == 0 || len > 253) // Max DNS hostname length
+		return false;
+
+	// Check for valid characters
+	for (size_t i = 0; i < len; i++) {
+		char c = hostname[i];
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+		      c == '.'))
+			return false;
+	}
+
+	// Cannot start or end with hyphen or dot
+	if (hostname[0] == '-' || hostname[0] == '.' || hostname[len - 1] == '-' || hostname[len - 1] == '.')
+		return false;
+
+	// Check for consecutive dots
+	for (size_t i = 1; i < len; i++) {
+		if (hostname[i] == '.' && hostname[i - 1] == '.')
+			return false;
+	}
+
+	return true;
+}
+
 static bool parse_url(const char *url, char **host, int *port, char **path)
 {
+	if (!url || !host || !port || !path)
+		return false;
+
+	// Validate URL length
+	size_t url_len = strlen(url);
+	if (url_len < 10 || url_len > 2048) // Reasonable limits
+		return false;
+
 	const char *start = url;
 
 	// Skip ws:// or wss://
@@ -67,6 +109,7 @@ static bool parse_url(const char *url, char **host, int *port, char **path)
 	} else if (strncmp(start, "wss://", 6) == 0) {
 		start += 6;
 		// Note: WSS not supported in this simple implementation
+		blog(LOG_WARNING, "[Entei] WSS (secure WebSocket) not supported, use WS instead");
 		return false;
 	} else {
 		return false;
@@ -80,29 +123,78 @@ static bool parse_url(const char *url, char **host, int *port, char **path)
 		slash = start + strlen(start);
 	}
 
+	// Extract and validate hostname
+	size_t host_len;
 	if (colon && colon < slash) {
-		size_t host_len = colon - start;
-		*host = bmalloc(host_len + 1);
-		memcpy(*host, start, host_len);
-		(*host)[host_len] = '\0';
+		host_len = colon - start;
+	} else {
+		host_len = slash - start;
+	}
 
+	if (host_len == 0 || host_len > 253)
+		return false;
+
+	// Validate hostname characters
+	if (!validate_hostname(start, host_len))
+		return false;
+
+	*host = bmalloc(host_len + 1);
+	memcpy(*host, start, host_len);
+	(*host)[host_len] = '\0';
+
+	// Extract and validate port
+	if (colon && colon < slash) {
 		char port_str[16];
 		size_t port_len = slash - colon - 1;
-		if (port_len >= sizeof(port_str))
+		if (port_len == 0 || port_len >= sizeof(port_str)) {
+			bfree(*host);
+			*host = NULL;
 			return false;
+		}
 		memcpy(port_str, colon + 1, port_len);
 		port_str[port_len] = '\0';
+
+		// Validate port is numeric
+		for (size_t i = 0; i < port_len; i++) {
+			if (!isdigit(port_str[i])) {
+				bfree(*host);
+				*host = NULL;
+				return false;
+			}
+		}
+
 		*port = atoi(port_str);
+		if (*port < 1 || *port > 65535) {
+			bfree(*host);
+			*host = NULL;
+			return false;
+		}
 	} else {
-		size_t host_len = slash - start;
-		*host = bmalloc(host_len + 1);
-		memcpy(*host, start, host_len);
-		(*host)[host_len] = '\0';
 		*port = 80;
 	}
 
+	// Extract path
 	*path = bstrdup(*slash ? slash : "/");
 	return true;
+}
+
+static void generate_websocket_key(char *key_out, size_t key_out_size)
+{
+	// Generate 16 random bytes
+	uint8_t random_bytes[16];
+	static bool seeded = false;
+
+	if (!seeded) {
+		srand((unsigned int)time(NULL) + (unsigned int)os_gettime_ns());
+		seeded = true;
+	}
+
+	for (int i = 0; i < 16; i++) {
+		random_bytes[i] = (uint8_t)(rand() & 0xFF);
+	}
+
+	// Base64 encode the random bytes
+	base64_encode(random_bytes, 16, key_out, key_out_size);
 }
 
 static bool send_websocket_handshake(struct websocket_client *client)
@@ -110,8 +202,9 @@ static bool send_websocket_handshake(struct websocket_client *client)
 	struct dstr handshake;
 	dstr_init(&handshake);
 
-	// Generate WebSocket key (simplified - should use proper random)
-	const char *ws_key = "dGhlIHNhbXBsZSBub25jZQ==";
+	// Generate secure WebSocket key
+	char ws_key[32];
+	generate_websocket_key(ws_key, sizeof(ws_key));
 
 	dstr_printf(&handshake,
 		    "GET %s HTTP/1.1\r\n"
@@ -180,8 +273,12 @@ static void process_websocket_frame(struct websocket_client *client, const uint8
 			// Complete message
 			dstr_ncat(&client->message_buffer, (char *)(data + pos), payload_len);
 
-			if (client->on_message) {
-				client->on_message(client->message_buffer.array, client->message_user_data);
+			pthread_mutex_lock(&client->mutex);
+			ws_message_callback callback = client->on_message;
+			void *user_data = client->message_user_data;
+			pthread_mutex_unlock(&client->mutex);
+			if (callback) {
+				callback(client->message_buffer.array, user_data);
 			}
 
 			dstr_free(&client->message_buffer);
@@ -191,7 +288,9 @@ static void process_websocket_frame(struct websocket_client *client, const uint8
 			dstr_ncat(&client->message_buffer, (char *)(data + pos), payload_len);
 		}
 	} else if (opcode == 0x8) { // Close frame
+		pthread_mutex_lock(&client->mutex);
 		client->connected = false;
+		pthread_mutex_unlock(&client->mutex);
 	} else if (opcode == 0x9) { // Ping frame
 		// Send pong
 		uint8_t pong[2] = {0x8A, 0x00}; // FIN + Pong opcode, 0 length
@@ -204,10 +303,19 @@ static void *websocket_thread(void *data)
 	struct websocket_client *client = data;
 
 	while (os_event_timedwait(client->stop_event, 100) == ETIMEDOUT) {
-		if (!client->connected && client->auto_reconnect) {
+		pthread_mutex_lock(&client->mutex);
+		bool connected = client->connected;
+		bool auto_reconnect = client->auto_reconnect;
+		uint32_t reconnect_ms = client->reconnect_interval_ms;
+		pthread_mutex_unlock(&client->mutex);
+
+		if (!connected && auto_reconnect) {
 			websocket_client_connect(client);
-			if (!client->connected) {
-				os_sleep_ms(client->reconnect_interval_ms);
+			pthread_mutex_lock(&client->mutex);
+			connected = client->connected;
+			pthread_mutex_unlock(&client->mutex);
+			if (!connected) {
+				os_sleep_ms(reconnect_ms);
 				continue;
 			}
 		}
@@ -232,9 +340,13 @@ static void *websocket_thread(void *data)
 					process_websocket_frame(client, client->recv_buffer, received);
 				} else if (received == 0 || (received < 0 && errno != EAGAIN)) {
 					// Connection closed
+					pthread_mutex_lock(&client->mutex);
 					client->connected = false;
-					if (client->on_connection) {
-						client->on_connection(false, client->connection_user_data);
+					ws_connection_callback callback = client->on_connection;
+					void *user_data = client->connection_user_data;
+					pthread_mutex_unlock(&client->mutex);
+					if (callback) {
+						callback(false, user_data);
 					}
 					blog(LOG_INFO, "[Entei] WebSocket connection closed");
 				}
@@ -269,8 +381,25 @@ websocket_client_t *websocket_client_create(const char *url)
 	os_event_init(&client->stop_event, OS_EVENT_TYPE_MANUAL);
 
 #ifdef _WIN32
-	WSADATA wsaData;
-	WSAStartup(MAKEWORD(2, 2), &wsaData);
+	pthread_mutex_lock(&ws_init_mutex);
+	if (os_atomic_inc_long(&ws_init_count) == 1) {
+		WSADATA wsaData;
+		int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+		if (result != 0) {
+			blog(LOG_ERROR, "[Entei] WSAStartup failed: %d", result);
+			os_atomic_dec_long(&ws_init_count);
+			pthread_mutex_unlock(&ws_init_mutex);
+			pthread_mutex_destroy(&client->mutex);
+			os_event_destroy(client->stop_event);
+			dstr_free(&client->message_buffer);
+			bfree(client->path);
+			bfree(client->host);
+			bfree(client->url);
+			bfree(client);
+			return NULL;
+		}
+	}
+	pthread_mutex_unlock(&ws_init_mutex);
 #endif
 
 	return client;
@@ -284,29 +413,47 @@ void websocket_client_destroy(websocket_client_t *client)
 	websocket_client_disconnect(client);
 
 	os_event_signal(client->stop_event);
-	if (client->thread_started) {
+	pthread_mutex_lock(&client->mutex);
+	bool thread_started = client->thread_started;
+	pthread_mutex_unlock(&client->mutex);
+	if (thread_started) {
 		pthread_join(client->thread, NULL);
+		pthread_mutex_lock(&client->mutex);
 		client->thread_started = false;
+		pthread_mutex_unlock(&client->mutex);
 	}
 
 	pthread_mutex_destroy(&client->mutex);
 	os_event_destroy(client->stop_event);
 
+	// Free resources in reverse order of allocation
 	dstr_free(&client->message_buffer);
-	bfree(client->url);
-	bfree(client->host);
 	bfree(client->path);
-	bfree(client);
+	bfree(client->host);
+	bfree(client->url);
 
 #ifdef _WIN32
-	WSACleanup();
+	pthread_mutex_lock(&ws_init_mutex);
+	if (os_atomic_dec_long(&ws_init_count) == 0) {
+		WSACleanup();
+	}
+	pthread_mutex_unlock(&ws_init_mutex);
 #endif
+
+	bfree(client);
 }
 
 bool websocket_client_connect(websocket_client_t *client)
 {
-	if (!client || client->connected)
+	if (!client)
 		return false;
+
+	pthread_mutex_lock(&client->mutex);
+	if (client->connected) {
+		pthread_mutex_unlock(&client->mutex);
+		return false;
+	}
+	pthread_mutex_unlock(&client->mutex);
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -319,8 +466,12 @@ bool websocket_client_connect(websocket_client_t *client)
 	snprintf(port_str, sizeof(port_str), "%d", client->port);
 
 	if (getaddrinfo(client->host, port_str, &hints, &result) != 0) {
-		if (client->on_error) {
-			client->on_error("Failed to resolve host", client->error_user_data);
+		pthread_mutex_lock(&client->mutex);
+		ws_error_callback callback = client->on_error;
+		void *user_data = client->error_user_data;
+		pthread_mutex_unlock(&client->mutex);
+		if (callback) {
+			callback("Failed to resolve host", user_data);
 		}
 		return false;
 	}
@@ -332,8 +483,12 @@ bool websocket_client_connect(websocket_client_t *client)
 	if (client->socket_fd < 0) {
 #endif
 		freeaddrinfo(result);
-		if (client->on_error) {
-			client->on_error("Failed to create socket", client->error_user_data);
+		pthread_mutex_lock(&client->mutex);
+		ws_error_callback callback = client->on_error;
+		void *user_data = client->error_user_data;
+		pthread_mutex_unlock(&client->mutex);
+		if (callback) {
+			callback("Failed to create socket", user_data);
 		}
 		return false;
 	}
@@ -346,8 +501,12 @@ bool websocket_client_connect(websocket_client_t *client)
 #else
 		client->socket_fd = -1;
 #endif
-		if (client->on_error) {
-			client->on_error("Failed to connect to server", client->error_user_data);
+		pthread_mutex_lock(&client->mutex);
+		ws_error_callback callback = client->on_error;
+		void *user_data = client->error_user_data;
+		pthread_mutex_unlock(&client->mutex);
+		if (callback) {
+			callback("Failed to connect to server", user_data);
 		}
 		return false;
 	}
@@ -361,22 +520,32 @@ bool websocket_client_connect(websocket_client_t *client)
 #else
 		client->socket_fd = -1;
 #endif
-		if (client->on_error) {
-			client->on_error("WebSocket handshake failed", client->error_user_data);
+		pthread_mutex_lock(&client->mutex);
+		ws_error_callback callback = client->on_error;
+		void *user_data = client->error_user_data;
+		pthread_mutex_unlock(&client->mutex);
+		if (callback) {
+			callback("WebSocket handshake failed", user_data);
 		}
 		return false;
 	}
 
+	pthread_mutex_lock(&client->mutex);
 	client->connected = true;
+	ws_connection_callback callback = client->on_connection;
+	void *user_data = client->connection_user_data;
+	pthread_mutex_unlock(&client->mutex);
 
-	if (client->on_connection) {
-		client->on_connection(true, client->connection_user_data);
+	if (callback) {
+		callback(true, user_data);
 	}
 
+	pthread_mutex_lock(&client->mutex);
 	if (!client->thread_started) {
 		pthread_create(&client->thread, NULL, websocket_thread, client);
 		client->thread_started = true;
 	}
+	pthread_mutex_unlock(&client->mutex);
 
 	blog(LOG_INFO, "[Entei] WebSocket connected to %s", client->url);
 	return true;
@@ -384,10 +553,16 @@ bool websocket_client_connect(websocket_client_t *client)
 
 void websocket_client_disconnect(websocket_client_t *client)
 {
-	if (!client || !client->connected)
+	if (!client)
 		return;
 
+	pthread_mutex_lock(&client->mutex);
+	if (!client->connected) {
+		pthread_mutex_unlock(&client->mutex);
+		return;
+	}
 	client->connected = false;
+	pthread_mutex_unlock(&client->mutex);
 
 #ifdef _WIN32
 	if (client->socket_fd != INVALID_SOCKET) {
@@ -406,8 +581,12 @@ void websocket_client_disconnect(websocket_client_t *client)
 #endif
 	}
 
-	if (client->on_connection) {
-		client->on_connection(false, client->connection_user_data);
+	pthread_mutex_lock(&client->mutex);
+	ws_connection_callback callback = client->on_connection;
+	void *user_data = client->connection_user_data;
+	pthread_mutex_unlock(&client->mutex);
+	if (callback) {
+		callback(false, user_data);
 	}
 
 	blog(LOG_INFO, "[Entei] WebSocket disconnected");
@@ -415,7 +594,13 @@ void websocket_client_disconnect(websocket_client_t *client)
 
 bool websocket_client_is_connected(const websocket_client_t *client)
 {
-	return client && client->connected;
+	if (!client)
+		return false;
+
+	pthread_mutex_lock((pthread_mutex_t *)&client->mutex); // Cast away const
+	bool connected = client->connected;
+	pthread_mutex_unlock((pthread_mutex_t *)&client->mutex);
+	return connected;
 }
 
 void websocket_client_set_message_callback(websocket_client_t *client, ws_message_callback callback, void *user_data)
@@ -457,7 +642,9 @@ void websocket_client_set_auto_reconnect(websocket_client_t *client, bool enable
 	if (!client)
 		return;
 
+	pthread_mutex_lock(&client->mutex);
 	client->auto_reconnect = enabled;
+	pthread_mutex_unlock(&client->mutex);
 }
 
 void websocket_client_set_reconnect_interval(websocket_client_t *client, uint32_t seconds)
@@ -465,5 +652,7 @@ void websocket_client_set_reconnect_interval(websocket_client_t *client, uint32_
 	if (!client)
 		return;
 
+	pthread_mutex_lock(&client->mutex);
 	client->reconnect_interval_ms = seconds * 1000;
+	pthread_mutex_unlock(&client->mutex);
 }
