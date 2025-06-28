@@ -87,7 +87,7 @@ function Log-Group {
     )
 
     Process {
-        if ( $Env:CI -ne $null )  {
+        if ( $env:CI -ne $null ) {
             if ( $script:LogGroup ) {
                 Write-Output '::endgroup::'
                 $script:LogGroup = $false
@@ -115,7 +115,7 @@ function Log-Status {
 
     Process {
         if ( ! ( $script:Quiet ) ) {
-            $StageName = $( if ( $StageName -ne $null ) { $StageName } else { '' })
+            $StageName = $( if ( $script:StageName -ne $null ) { $script:StageName } else { '' })
             $Icon = '  >'
 
             foreach($m in $Message) {
@@ -146,4 +146,4 @@ function Log-Output {
     }
 }
 
-$Columns = (Get-Host).UI.RawUI.WindowSize.Width - 5
+$Columns = try { (Get-Host).UI.RawUI.WindowSize.Width - 5 } catch { 80 }

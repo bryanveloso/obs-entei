@@ -81,3 +81,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# Install locale files
+install(DIRECTORY data/locale DESTINATION data/obs-plugins/${CMAKE_PROJECT_NAME} FILES_MATCHING PATTERN "*.ini")
