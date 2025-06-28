@@ -31,8 +31,13 @@ struct websocket_client {
     int port;
     char *path;
     
+#ifdef _WIN32
+    SOCKET socket_fd;
+#else
     int socket_fd;
+#endif
     pthread_t thread;
+    bool thread_started;
     pthread_mutex_t mutex;
     os_event_t *stop_event;
     
@@ -118,7 +123,7 @@ static bool send_websocket_handshake(struct websocket_client *client)
         "\r\n",
         client->path, client->host, client->port, ws_key);
     
-    int sent = send(client->socket_fd, handshake.array, handshake.len, 0);
+    int sent = send(client->socket_fd, handshake.array, (int)handshake.len, 0);
     dstr_free(&handshake);
     
     if (sent < 0) {
@@ -207,7 +212,13 @@ static void *websocket_thread(void *data)
             }
         }
         
-        if (client->connected && client->socket_fd >= 0) {
+        if (client->connected && 
+#ifdef _WIN32
+            client->socket_fd != INVALID_SOCKET
+#else
+            client->socket_fd >= 0
+#endif
+            ) {
             fd_set read_fds;
             struct timeval tv = {0, 100000}; // 100ms timeout
             
@@ -240,7 +251,11 @@ websocket_client_t *websocket_client_create(const char *url)
     client->url = bstrdup(url);
     client->auto_reconnect = true;
     client->reconnect_interval_ms = RECONNECT_DELAY_MS;
+#ifdef _WIN32
+    client->socket_fd = INVALID_SOCKET;
+#else
     client->socket_fd = -1;
+#endif
     dstr_init(&client->message_buffer);
     
     if (!parse_url(url, &client->host, &client->port, &client->path)) {
@@ -269,8 +284,9 @@ void websocket_client_destroy(websocket_client_t *client)
     websocket_client_disconnect(client);
     
     os_event_signal(client->stop_event);
-    if (client->thread) {
+    if (client->thread_started) {
         pthread_join(client->thread, NULL);
+        client->thread_started = false;
     }
     
     pthread_mutex_destroy(&client->mutex);
@@ -292,7 +308,8 @@ bool websocket_client_connect(websocket_client_t *client)
     if (!client || client->connected)
         return false;
     
-    struct addrinfo hints = {0};
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
     struct addrinfo *result;
     char port_str[16];
     
@@ -309,7 +326,11 @@ bool websocket_client_connect(websocket_client_t *client)
     }
     
     client->socket_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+#ifdef _WIN32
+    if (client->socket_fd == INVALID_SOCKET) {
+#else
     if (client->socket_fd < 0) {
+#endif
         freeaddrinfo(result);
         if (client->on_error) {
             client->on_error("Failed to create socket", client->error_user_data);
@@ -317,10 +338,14 @@ bool websocket_client_connect(websocket_client_t *client)
         return false;
     }
     
-    if (connect(client->socket_fd, result->ai_addr, result->ai_addrlen) < 0) {
+    if (connect(client->socket_fd, result->ai_addr, (int)result->ai_addrlen) < 0) {
         freeaddrinfo(result);
         close(client->socket_fd);
+#ifdef _WIN32
+        client->socket_fd = INVALID_SOCKET;
+#else
         client->socket_fd = -1;
+#endif
         if (client->on_error) {
             client->on_error("Failed to connect to server", client->error_user_data);
         }
@@ -331,7 +356,11 @@ bool websocket_client_connect(websocket_client_t *client)
     
     if (!send_websocket_handshake(client)) {
         close(client->socket_fd);
+#ifdef _WIN32
+        client->socket_fd = INVALID_SOCKET;
+#else
         client->socket_fd = -1;
+#endif
         if (client->on_error) {
             client->on_error("WebSocket handshake failed", client->error_user_data);
         }
@@ -344,8 +373,9 @@ bool websocket_client_connect(websocket_client_t *client)
         client->on_connection(true, client->connection_user_data);
     }
     
-    if (!client->thread) {
+    if (!client->thread_started) {
         pthread_create(&client->thread, NULL, websocket_thread, client);
+        client->thread_started = true;
     }
     
     blog(LOG_INFO, "[Entei] WebSocket connected to %s", client->url);
@@ -359,13 +389,21 @@ void websocket_client_disconnect(websocket_client_t *client)
     
     client->connected = false;
     
+#ifdef _WIN32
+    if (client->socket_fd != INVALID_SOCKET) {
+#else
     if (client->socket_fd >= 0) {
+#endif
         // Send close frame
         uint8_t close_frame[2] = {0x88, 0x00}; // FIN + Close opcode, 0 length
         send(client->socket_fd, close_frame, 2, 0);
         
         close(client->socket_fd);
+#ifdef _WIN32
+        client->socket_fd = INVALID_SOCKET;
+#else
         client->socket_fd = -1;
+#endif
     }
     
     if (client->on_connection) {
