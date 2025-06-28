@@ -175,6 +175,10 @@ static void on_event(enum obs_frontend_event event, void *private_data)
             entei_caption_provider_stop(caption_provider);
         }
         break;
+        
+    default:
+        // Ignore other events
+        break;
     }
 }
 
