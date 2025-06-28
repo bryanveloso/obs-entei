@@ -20,15 +20,10 @@ bool websocket_client_connect(websocket_client_t *client);
 void websocket_client_disconnect(websocket_client_t *client);
 bool websocket_client_is_connected(const websocket_client_t *client);
 
-void websocket_client_set_message_callback(websocket_client_t *client, 
-                                          ws_message_callback callback, 
-                                          void *user_data);
-void websocket_client_set_error_callback(websocket_client_t *client, 
-                                       ws_error_callback callback, 
-                                       void *user_data);
-void websocket_client_set_connection_callback(websocket_client_t *client,
-                                            ws_connection_callback callback,
-                                            void *user_data);
+void websocket_client_set_message_callback(websocket_client_t *client, ws_message_callback callback, void *user_data);
+void websocket_client_set_error_callback(websocket_client_t *client, ws_error_callback callback, void *user_data);
+void websocket_client_set_connection_callback(websocket_client_t *client, ws_connection_callback callback,
+					      void *user_data);
 
 void websocket_client_set_auto_reconnect(websocket_client_t *client, bool enabled);
 void websocket_client_set_reconnect_interval(websocket_client_t *client, uint32_t seconds);

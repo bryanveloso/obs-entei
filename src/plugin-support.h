@@ -28,7 +28,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 extern "C" {
 #endif
 
-
 #ifdef __cplusplus
 }
 #endif
