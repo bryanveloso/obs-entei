@@ -22,6 +22,7 @@ struct entei_caption_provider {
 	uint64_t last_caption_time;
 
 	bool active;
+	bool enabled;
 	char *websocket_url;
 	int reconnect_delay;
 	bool show_partial;
@@ -170,6 +171,7 @@ entei_caption_provider_t *entei_caption_provider_create(obs_data_t *settings)
 	dstr_init(&provider->pending_caption);
 
 	// Load settings
+	provider->enabled = obs_data_get_bool(settings, "enabled");
 	const char *url = obs_data_get_string(settings, "websocket_url");
 	if (!url || strlen(url) == 0) {
 		url = DEFAULT_WEBSOCKET_URL;
@@ -214,7 +216,7 @@ void entei_caption_provider_destroy(entei_caption_provider_t *provider)
 
 void entei_caption_provider_start(entei_caption_provider_t *provider)
 {
-	if (!provider || provider->active)
+	if (!provider || provider->active || !provider->enabled)
 		return;
 
 	provider->active = true;
@@ -261,6 +263,9 @@ void entei_caption_provider_update(entei_caption_provider_t *provider, obs_data_
 	pthread_mutex_lock(&provider->mutex);
 
 	// Update settings
+	bool old_enabled = provider->enabled;
+	provider->enabled = obs_data_get_bool(settings, "enabled");
+
 	const char *new_url = obs_data_get_string(settings, "websocket_url");
 	if (!new_url || strlen(new_url) == 0) {
 		new_url = DEFAULT_WEBSOCKET_URL;
@@ -276,6 +281,29 @@ void entei_caption_provider_update(entei_caption_provider_t *provider, obs_data_
 	provider->show_partial = obs_data_get_bool(settings, "show_partial");
 
 	pthread_mutex_unlock(&provider->mutex);
+
+	// Handle enable/disable state change
+	if (old_enabled != provider->enabled) {
+		if (provider->enabled) {
+			// Just enabled - check if we should start
+			// Only start if streaming/recording is active
+			obs_output_t *streaming_output = obs_frontend_get_streaming_output();
+			obs_output_t *recording_output = obs_frontend_get_recording_output();
+			bool should_start = (streaming_output && obs_output_active(streaming_output)) ||
+					    (recording_output && obs_output_active(recording_output));
+			if (streaming_output)
+				obs_output_release(streaming_output);
+			if (recording_output)
+				obs_output_release(recording_output);
+
+			if (should_start) {
+				entei_caption_provider_start(provider);
+			}
+		} else if (!provider->enabled) {
+			// Just disabled - stop connection
+			entei_caption_provider_stop(provider);
+		}
+	}
 
 	// Recreate WebSocket client if URL changed
 	if (url_changed && provider->ws_client) {
@@ -306,6 +334,8 @@ obs_properties_t *entei_caption_provider_properties(void)
 {
 	obs_properties_t *props = obs_properties_create();
 
+	obs_properties_add_bool(props, "enabled", obs_module_text("EnableCaptions"));
+
 	obs_properties_add_text(props, "websocket_url", obs_module_text("WebSocketURL"), OBS_TEXT_DEFAULT);
 
 	obs_properties_add_int(props, "reconnect_delay", obs_module_text("ReconnectDelay"), 1, 60, 1);
@@ -317,6 +347,7 @@ obs_properties_t *entei_caption_provider_properties(void)
 
 void entei_caption_provider_defaults(obs_data_t *settings)
 {
+	obs_data_set_default_bool(settings, "enabled", false);
 	obs_data_set_default_string(settings, "websocket_url", DEFAULT_WEBSOCKET_URL);
 	obs_data_set_default_int(settings, "reconnect_delay", 5);
 	obs_data_set_default_bool(settings, "show_partial", false);

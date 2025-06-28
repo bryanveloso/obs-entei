@@ -14,9 +14,9 @@ include(helpers)
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 # Define plugin name and version
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
-  PLUGIN_NAME="${CMAKE_PROJECT_NAME}"
-  PLUGIN_VERSION="${_version}"
+target_compile_definitions(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE PLUGIN_NAME="${CMAKE_PROJECT_NAME}" PLUGIN_VERSION="${_version}"
 )
 
 find_package(libobs REQUIRED)
@@ -45,7 +45,7 @@ endif()
 if(NOT JANSSON_FOUND)
   find_path(JANSSON_INCLUDE_DIR NAMES jansson.h)
   find_library(JANSSON_LIBRARY NAMES jansson)
-  
+
   if(JANSSON_INCLUDE_DIR AND JANSSON_LIBRARY)
     target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${JANSSON_INCLUDE_DIR})
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${JANSSON_LIBRARY})
@@ -74,11 +74,7 @@ if(ENABLE_QT)
   )
 endif()
 
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE 
-  src/plugin-main.c
-  src/websocket-client.c
-  src/entei-caption-provider.c
-)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/websocket-client.c src/entei-caption-provider.c)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
