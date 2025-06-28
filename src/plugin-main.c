@@ -18,6 +18,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
+#include <util/config-file.h>
+#include <util/platform.h>
 #include <plugin-support.h>
 #include "entei-caption-provider.h"
 
@@ -44,7 +46,7 @@ static void entei_settings_callback(void *data)
     }
     
     // Show properties dialog
-    bool settings_changed = obs_frontend_open_source_properties_dialog(
+    bool settings_changed = obs_frontend_open_source_properties(
         NULL, 
         obs_module_text("EnteiCaptionSettings"),
         saved_settings,
@@ -63,14 +65,14 @@ static void entei_settings_callback(void *data)
             caption_provider = entei_caption_provider_create(saved_settings);
         }
         
-        // Save settings to config
-        char *settings_json = obs_data_get_json(saved_settings);
+        // Save settings to profile
+        const char *settings_json = obs_data_get_json(saved_settings);
         if (settings_json) {
-            config_t *config = obs_frontend_get_global_config();
-            if (config) {
-                config_set_string(config, "EnteiCaptionProvider", "Settings", settings_json);
+            char *file = obs_module_config_path("settings.json");
+            if (file) {
+                os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
+                bfree(file);
             }
-            bfree(settings_json);
         }
     }
     
@@ -80,13 +82,14 @@ static void entei_settings_callback(void *data)
 // Load settings from config
 static void load_settings(void)
 {
-    config_t *config = obs_frontend_get_global_config();
-    if (!config)
-        return;
-    
-    const char *settings_json = config_get_string(config, "EnteiCaptionProvider", "Settings");
-    if (settings_json && strlen(settings_json) > 0) {
-        saved_settings = obs_data_create_from_json(settings_json);
+    char *file = obs_module_config_path("settings.json");
+    if (file) {
+        char *settings_json = os_quick_read_utf8_file(file);
+        if (settings_json) {
+            saved_settings = obs_data_create_from_json(settings_json);
+            bfree(settings_json);
+        }
+        bfree(file);
     }
     
     if (!saved_settings) {
@@ -169,13 +172,13 @@ void obs_module_unload(void)
     
     // Save settings before unloading
     if (saved_settings) {
-        char *settings_json = obs_data_get_json(saved_settings);
+        const char *settings_json = obs_data_get_json(saved_settings);
         if (settings_json) {
-            config_t *config = obs_frontend_get_global_config();
-            if (config) {
-                config_set_string(config, "EnteiCaptionProvider", "Settings", settings_json);
+            char *file = obs_module_config_path("settings.json");
+            if (file) {
+                os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
+                bfree(file);
             }
-            bfree(settings_json);
         }
         obs_data_release(saved_settings);
         saved_settings = NULL;

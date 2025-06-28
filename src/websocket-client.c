@@ -76,7 +76,11 @@ static bool parse_url(const char *url, char **host, int *port, char **path)
     }
     
     if (colon && colon < slash) {
-        *host = bstrndup(start, colon - start);
+        size_t host_len = colon - start;
+        *host = bmalloc(host_len + 1);
+        memcpy(*host, start, host_len);
+        (*host)[host_len] = '\0';
+        
         char port_str[16];
         size_t port_len = slash - colon - 1;
         if (port_len >= sizeof(port_str))
@@ -85,7 +89,10 @@ static bool parse_url(const char *url, char **host, int *port, char **path)
         port_str[port_len] = '\0';
         *port = atoi(port_str);
     } else {
-        *host = bstrndup(start, slash - start);
+        size_t host_len = slash - start;
+        *host = bmalloc(host_len + 1);
+        memcpy(*host, start, host_len);
+        (*host)[host_len] = '\0';
         *port = 80;
     }
     

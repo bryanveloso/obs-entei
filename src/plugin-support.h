@@ -28,8 +28,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 extern "C" {
 #endif
 
-extern const char *PLUGIN_NAME;
-extern const char *PLUGIN_VERSION;
 
 #ifdef __cplusplus
 }

@@ -6,7 +6,10 @@
 #include <util/platform.h>
 #include <util/threading.h>
 #include <util/dstr.h>
+
+#ifdef JANSSON_FOUND
 #include <jansson.h>
+#endif
 
 #define CAPTION_TIMEOUT_MS 10000
 #define DEFAULT_WEBSOCKET_URL "ws://localhost:8889/events"
@@ -28,37 +31,89 @@ struct entei_caption_provider {
     struct dstr pending_caption;
 };
 
+// Simple JSON parser for our specific format
+static bool parse_transcription_json(const char *json, const char **type, const char **text, bool *is_final)
+{
+    // Default values
+    *type = NULL;
+    *text = NULL;
+    *is_final = true;
+    
+    // Find "type" field
+    const char *type_start = strstr(json, "\"type\"");
+    if (type_start) {
+        type_start = strchr(type_start + 6, ':');
+        if (type_start) {
+            type_start = strchr(type_start, '"');
+            if (type_start) {
+                type_start++;
+                const char *type_end = strchr(type_start, '"');
+                if (type_end) {
+                    static char type_buf[64];
+                    size_t len = type_end - type_start;
+                    if (len < sizeof(type_buf)) {
+                        memcpy(type_buf, type_start, len);
+                        type_buf[len] = '\0';
+                        *type = type_buf;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Find "text" field
+    const char *text_start = strstr(json, "\"text\"");
+    if (text_start) {
+        text_start = strchr(text_start + 6, ':');
+        if (text_start) {
+            text_start = strchr(text_start, '"');
+            if (text_start) {
+                text_start++;
+                const char *text_end = strchr(text_start, '"');
+                if (text_end) {
+                    static char text_buf[4096];
+                    size_t len = text_end - text_start;
+                    if (len < sizeof(text_buf)) {
+                        memcpy(text_buf, text_start, len);
+                        text_buf[len] = '\0';
+                        *text = text_buf;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Find "is_final" field
+    const char *final_start = strstr(json, "\"is_final\"");
+    if (final_start) {
+        final_start = strchr(final_start + 10, ':');
+        if (final_start) {
+            while (*final_start && (*final_start == ' ' || *final_start == ':'))
+                final_start++;
+            if (strncmp(final_start, "false", 5) == 0) {
+                *is_final = false;
+            }
+        }
+    }
+    
+    return *type && *text;
+}
+
 static void on_websocket_message(const char *message, void *user_data)
 {
     struct entei_caption_provider *provider = user_data;
     
-    // Parse JSON message
-    json_error_t error;
-    json_t *root = json_loads(message, 0, &error);
-    if (!root) {
-        blog(LOG_WARNING, "[Entei] Failed to parse JSON: %s", error.text);
+    const char *type;
+    const char *text;
+    bool is_final;
+    
+    if (!parse_transcription_json(message, &type, &text, &is_final)) {
+        blog(LOG_WARNING, "[Entei] Failed to parse message: %s", message);
         return;
     }
     
-    // Extract fields
-    const char *type = json_string_value(json_object_get(root, "type"));
-    const char *text = json_string_value(json_object_get(root, "text"));
-    json_t *timestamp_obj = json_object_get(root, "timestamp");
-    json_t *is_final_obj = json_object_get(root, "is_final");
-    
-    if (!type || strcmp(type, "audio:transcription") != 0) {
-        json_decref(root);
+    if (strcmp(type, "audio:transcription") != 0) {
         return;
-    }
-    
-    if (!text) {
-        json_decref(root);
-        return;
-    }
-    
-    bool is_final = true;
-    if (is_final_obj && json_is_boolean(is_final_obj)) {
-        is_final = json_boolean_value(is_final_obj);
     }
     
     pthread_mutex_lock(&provider->mutex);
@@ -94,7 +149,6 @@ static void on_websocket_message(const char *message, void *user_data)
     }
     
     pthread_mutex_unlock(&provider->mutex);
-    json_decref(root);
 }
 
 static void on_websocket_error(const char *error, void *user_data)
