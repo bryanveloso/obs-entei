@@ -1,59 +1,92 @@
-# OBS Plugin Template
+# Entei Caption Provider for OBS Studio
 
 ## Introduction
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+The Entei Caption Provider is a plugin that receives real-time transcriptions via WebSocket and sends them to OBS's native caption system for streaming platforms like Twitch and YouTube.
 
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+**Entei** is an alliteration of **NTI** (Network Transcript Interface), inspired by NDI (Network Device Interface).
 
-## Supported Build Environments
+## Features
 
-| Platform  | Tool   |
-|-----------|--------|
-| Windows   | Visal Studio 17 2022 |
-| macOS     | XCode 16.0 |
-| Windows, macOS  | CMake 3.30.5 |
-| Ubuntu 24.04 | CMake 3.28.3 |
-| Ubuntu 24.04 | `ninja-build` |
-| Ubuntu 24.04 | `pkg-config`
-| Ubuntu 24.04 | `build-essential` |
+* Receives transcriptions from a WebSocket server
+* Sends captions as CEA-708 metadata (not rendered in video)
+* Auto-starts when streaming/recording begins
+* Automatic reconnection on connection loss
+* Configurable WebSocket URL and settings
+* Shows [CC] button on streaming platforms for viewers
 
-## Quick Start
+## Installation
 
-An absolute bare-bones [Quick Start Guide](https://github.com/obsproject/obs-plugintemplate/wiki/Quick-Start-Guide) is available in the wiki.
+1. Download the latest release for your platform
+2. Extract to your OBS plugins folder:
+   - **Windows**: `C:\Program Files\obs-studio\obs-plugins\64bit`
+   - **macOS**: `~/Library/Application Support/obs-studio/plugins`
+   - **Linux**: `/usr/share/obs/obs-plugins`
+3. Restart OBS Studio
+4. Access via Tools → Entei Caption Provider
 
-## Documentation
+## Configuration
 
-All documentation can be found in the [Plugin Template Wiki](https://github.com/obsproject/obs-plugintemplate/wiki).
+1. Open Tools → Entei Caption Provider
+2. Configure settings:
+   - **WebSocket URL**: Default `ws://localhost:8889/events`
+   - **Reconnect Delay**: Seconds between reconnection attempts
+   - **Show Partial Captions**: Display in-progress transcriptions
 
-Suggested reading to get up and running:
+## WebSocket Protocol
 
-* [Getting started](https://github.com/obsproject/obs-plugintemplate/wiki/Getting-Started)
-* [Build system requirements](https://github.com/obsproject/obs-plugintemplate/wiki/Build-System-Requirements)
-* [Build system options](https://github.com/obsproject/obs-plugintemplate/wiki/CMake-Build-System-Options)
+The plugin expects JSON messages in this format:
 
-## GitHub Actions & CI
+```json
+{
+  "type": "audio:transcription",
+  "timestamp": 1703001234567,
+  "text": "Hello world",
+  "is_final": true
+}
+```
 
-Default GitHub Actions workflows are available for the following repository actions:
+* `type`: Must be `"audio:transcription"`
+* `timestamp`: Unix timestamp in milliseconds
+* `text`: The caption text to display
+* `is_final`: Optional boolean (default: true). If false, caption is partial
 
-* `push`: Run for commits or tags pushed to `master` or `main` branches.
-* `pr-pull`: Run when a Pull Request has been pushed or synchronized.
-* `dispatch`: Run when triggered by the workflow dispatch in GitHub's user interface.
-* `build-project`: Builds the actual project and is triggered by other workflows.
-* `check-format`: Checks CMake and plugin source code formatting and is triggered by other workflows.
+## Building from Source
 
-The workflows make use of GitHub repository actions (contained in `.github/actions`) and build scripts (contained in `.github/scripts`) which are not needed for local development, but might need to be adjusted if additional/different steps are required to build the plugin.
+### Requirements
 
-### Retrieving build artifacts
+* OBS Studio 31.0.0 or later
+* CMake 3.28 or later
+* Jansson library for JSON parsing
+* Platform-specific build tools (see below)
 
-Successful builds on GitHub Actions will produce build artifacts that can be downloaded for testing. These artifacts are commonly simple archives and will not contain package installers or installation programs.
+### macOS
 
-### Building a Release
+```bash
+brew install jansson
+cmake --preset macos
+cmake --build build_macos --config Release
+```
 
-To create a release, an appropriately named tag needs to be pushed to the `main`/`master` branch using semantic versioning (e.g., `12.3.4`, `23.4.5-beta2`). A draft release will be created on the associated repository with generated installer packages or installation programs attached as release artifacts.
+### Windows
 
-## Signing and Notarizing on macOS
+```bash
+cmake --preset windows-x64
+cmake --build build_windows_x64 --config Release
+```
 
-Basic concepts of codesigning and notarization on macOS are explained in the correspodning [Wiki article](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS) which has a specific section for the [GitHub Actions setup](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS#setting-up-code-signing-for-github-actions).
+### Linux
+
+```bash
+sudo apt-get install libjansson-dev
+cmake --preset linux-x86_64
+cmake --build build_linux_x86_64 --config Release
+```
+
+## License
+
+This project is licensed under the GPL-2.0 License - see the [LICENSE](LICENSE) file for details.
+
+## Credits
+
+Based on the [OBS Plugin Template](https://github.com/obsproject/obs-plugintemplate)
