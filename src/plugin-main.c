@@ -27,75 +27,112 @@ OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 static entei_caption_provider_t *caption_provider = NULL;
-static obs_data_t *saved_settings = NULL;
+static obs_source_t *settings_source = NULL;
 
-// Settings dialog
+// Dummy source functions for settings
+static const char *entei_settings_get_name(void *unused)
+{
+    UNUSED_PARAMETER(unused);
+    return obs_module_text("EnteiCaptionSettings");
+}
+
+static void *entei_settings_create(obs_data_t *settings, obs_source_t *source)
+{
+    UNUSED_PARAMETER(settings);
+    UNUSED_PARAMETER(source);
+    return (void *)1; // Return non-null
+}
+
+static void entei_settings_destroy(void *data)
+{
+    UNUSED_PARAMETER(data);
+}
+
+static void entei_settings_update(void *data, obs_data_t *settings)
+{
+    UNUSED_PARAMETER(data);
+    
+    // Update the actual caption provider
+    if (caption_provider) {
+        entei_caption_provider_update(caption_provider, settings);
+    } else {
+        // Create provider if it doesn't exist
+        caption_provider = entei_caption_provider_create(settings);
+    }
+    
+    // Save settings to file
+    const char *settings_json = obs_data_get_json(settings);
+    if (settings_json) {
+        char *file = obs_module_config_path("settings.json");
+        if (file) {
+            os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
+            bfree(file);
+        }
+    }
+}
+
+static obs_properties_t *entei_settings_properties(void *data)
+{
+    UNUSED_PARAMETER(data);
+    return entei_caption_provider_properties();
+}
+
+static void entei_settings_defaults(obs_data_t *settings)
+{
+    entei_caption_provider_defaults(settings);
+}
+
+static struct obs_source_info entei_settings_source_info = {
+    .id = "entei_caption_settings",
+    .type = OBS_SOURCE_TYPE_INPUT,
+    .output_flags = OBS_SOURCE_DO_NOT_DUPLICATE,
+    .get_name = entei_settings_get_name,
+    .create = entei_settings_create,
+    .destroy = entei_settings_destroy,
+    .update = entei_settings_update,
+    .get_properties = entei_settings_properties,
+    .get_defaults = entei_settings_defaults,
+};
+
+// Tools menu callback
 static void entei_settings_callback(void *data)
 {
     UNUSED_PARAMETER(data);
     
-    obs_frontend_push_ui_translation(obs_module_get_string);
-    
-    // Create properties
-    obs_properties_t *props = entei_caption_provider_properties();
-    
-    // Get current settings
-    if (!saved_settings) {
-        saved_settings = obs_data_create();
-        entei_caption_provider_defaults(saved_settings);
+    if (settings_source) {
+        obs_frontend_open_source_properties(settings_source);
     }
-    
-    // Show properties dialog
-    bool settings_changed = obs_frontend_open_source_properties(
-        NULL, 
-        obs_module_text("EnteiCaptionSettings"),
-        saved_settings,
-        props,
-        NULL
-    );
-    
-    obs_properties_destroy(props);
-    
-    if (settings_changed) {
-        // Apply new settings
-        if (caption_provider) {
-            entei_caption_provider_update(caption_provider, saved_settings);
-        } else {
-            // Create provider if it doesn't exist
-            caption_provider = entei_caption_provider_create(saved_settings);
-        }
-        
-        // Save settings to profile
-        const char *settings_json = obs_data_get_json(saved_settings);
-        if (settings_json) {
-            char *file = obs_module_config_path("settings.json");
-            if (file) {
-                os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
-                bfree(file);
-            }
-        }
-    }
-    
-    obs_frontend_pop_ui_translation();
 }
 
 // Load settings from config
 static void load_settings(void)
 {
+    obs_data_t *settings = NULL;
+    
     char *file = obs_module_config_path("settings.json");
     if (file) {
         char *settings_json = os_quick_read_utf8_file(file);
         if (settings_json) {
-            saved_settings = obs_data_create_from_json(settings_json);
+            settings = obs_data_create_from_json(settings_json);
             bfree(settings_json);
         }
         bfree(file);
     }
     
-    if (!saved_settings) {
-        saved_settings = obs_data_create();
-        entei_caption_provider_defaults(saved_settings);
+    if (!settings) {
+        settings = obs_data_create();
+        entei_caption_provider_defaults(settings);
     }
+    
+    // Create caption provider with loaded settings
+    caption_provider = entei_caption_provider_create(settings);
+    
+    // Apply settings to the settings source
+    if (settings_source) {
+        obs_source_update(settings_source, settings);
+    }
+    
+    obs_data_release(settings);
 }
 
 // Frontend event handling
@@ -146,11 +183,14 @@ bool obs_module_load(void)
     blog(LOG_INFO, "[Entei] Loading plugin (version %s)", PLUGIN_VERSION);
     blog(LOG_INFO, "[Entei] Network Transcript Interface caption provider for OBS Studio");
     
-    // Load saved settings
-    load_settings();
+    // Register the settings source
+    obs_register_source(&entei_settings_source_info);
     
-    // Create caption provider
-    caption_provider = entei_caption_provider_create(saved_settings);
+    // Create the settings source
+    settings_source = obs_source_create_private("entei_caption_settings", "Entei Caption Settings", NULL);
+    
+    // Load saved settings and create caption provider
+    load_settings();
     
     // Add Tools menu item
     obs_frontend_add_tools_menu_item(
@@ -170,21 +210,12 @@ void obs_module_unload(void)
 {
     blog(LOG_INFO, "[Entei] Unloading plugin");
     
-    // Save settings before unloading
-    if (saved_settings) {
-        const char *settings_json = obs_data_get_json(saved_settings);
-        if (settings_json) {
-            char *file = obs_module_config_path("settings.json");
-            if (file) {
-                os_quick_write_utf8_file(file, settings_json, strlen(settings_json), false);
-                bfree(file);
-            }
-        }
-        obs_data_release(saved_settings);
-        saved_settings = NULL;
+    // Clean up
+    if (settings_source) {
+        obs_source_release(settings_source);
+        settings_source = NULL;
     }
     
-    // Clean up
     if (caption_provider) {
         entei_caption_provider_destroy(caption_provider);
         caption_provider = NULL;

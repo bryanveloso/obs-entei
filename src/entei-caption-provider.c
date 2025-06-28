@@ -119,22 +119,15 @@ static void on_websocket_message(const char *message, void *user_data)
     pthread_mutex_lock(&provider->mutex);
     
     if (is_final || provider->show_partial) {
-        // Send caption to OBS
-        struct obs_source_cea_708 caption = {0};
-        caption.data = (uint8_t *)text;
-        caption.size = strlen(text);
-        caption.timestamp = os_gettime_ns();
-        caption.format = OBS_SOURCE_CEA_708_TEXT;
-        
         obs_output_t *output = obs_frontend_get_streaming_output();
         if (output) {
-            obs_output_output_caption_text2(output, &caption);
+            obs_output_output_caption_text2(output, text, 0.0);
             obs_output_release(output);
         }
         
         output = obs_frontend_get_recording_output();
         if (output) {
-            obs_output_output_caption_text2(output, &caption);
+            obs_output_output_caption_text2(output, text, 0.0);
             obs_output_release(output);
         }
         
@@ -153,12 +146,13 @@ static void on_websocket_message(const char *message, void *user_data)
 
 static void on_websocket_error(const char *error, void *user_data)
 {
+    UNUSED_PARAMETER(user_data);
     blog(LOG_ERROR, "[Entei] WebSocket error: %s", error);
 }
 
 static void on_websocket_connection(bool connected, void *user_data)
 {
-    struct entei_caption_provider *provider = user_data;
+    UNUSED_PARAMETER(user_data);
     
     if (connected) {
         blog(LOG_INFO, "[Entei] Caption provider connected to WebSocket");

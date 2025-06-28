@@ -57,7 +57,7 @@ The plugin expects JSON messages in this format:
 
 * OBS Studio 31.0.0 or later
 * CMake 3.28 or later
-* Jansson library for JSON parsing
+* Jansson library (optional, for enhanced JSON parsing)
 * Platform-specific build tools (see below)
 
 ### macOS
