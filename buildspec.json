@@ -35,8 +35,8 @@
             "baseUrl": "https://github.com/zaphoyd/websocketpp/archive/refs/tags",
             "label": "WebSocket++ Headers",
             "hashes": {
-                "macos": "6ce889d85ecdc2d8fa07408d6787e7352510750daa66b5ad44aacb47bea76755",
-                "windows-x64": "6ce889d85ecdc2d8fa07408d6787e7352510750daa66b5ad44aacb47bea76755"
+                "macos": "0281b1d1278f01138805279fd2277901ae3c71b76e28364575356061098111c6",
+                "windows-x64": "0281b1d1278f01138805279fd2277901ae3c71b76e28364575356061098111c6"
             }
         },
         "asio": {
@@ -44,8 +44,8 @@
             "baseUrl": "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio",
             "label": "Asio Headers",
             "hashes": {
-                "macos": "37c13ccd2554a924e1aac1bb4ea71b0b35a0c88fbc9ee10a80c94a93134c80de",
-                "windows-x64": "37c13ccd2554a924e1aac1bb4ea71b0b35a0c88fbc9ee10a80c94a93134c80de"
+                "macos": "5c2af07ef73b42a2d48e34c0ecbf41cd40dc823bc681bf5833c129384999c963",
+                "windows-x64": "5c2af07ef73b42a2d48e34c0ecbf41cd40dc823bc681bf5833c129384999c963"
             }
         }
     },

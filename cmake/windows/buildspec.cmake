@@ -20,7 +20,14 @@ function(_check_dependencies_windows)
   set(websocketpp_destination "websocketpp-VERSION")
   set(asio_filename "-VERSION.zip")
   set(asio_destination "asio-asio-VERSION")
-  set(dependencies_list prebuilt qt6 obs-studio websocketpp asio)
+  set(
+    dependencies_list
+    prebuilt
+    qt6
+    obs-studio
+    websocketpp
+    asio
+  )
 
   _check_dependencies()
 endfunction()

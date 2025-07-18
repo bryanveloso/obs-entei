@@ -22,7 +22,14 @@ function(_check_dependencies_macos)
   set(websocketpp_destination "websocketpp-VERSION")
   set(asio_filename "-VERSION.tar.gz")
   set(asio_destination "asio-asio-VERSION")
-  set(dependencies_list prebuilt qt6 obs-studio websocketpp asio)
+  set(
+    dependencies_list
+    prebuilt
+    qt6
+    obs-studio
+    websocketpp
+    asio
+  )
 
   _check_dependencies()
 
