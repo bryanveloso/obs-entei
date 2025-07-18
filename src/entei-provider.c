@@ -1,8 +1,11 @@
 #include "entei-provider.h"
 #include "plugin-support.h"
+#include "websocket-client.h"
 
 struct entei_caption_provider {
 	obs_source_t *source;
+	struct websocket_client *client;
+	char *websocket_url;
 };
 
 static const char *entei_caption_provider_get_name(void *unused)
@@ -13,10 +16,16 @@ static const char *entei_caption_provider_get_name(void *unused)
 
 static void *entei_caption_provider_create(obs_data_t *settings, obs_source_t *source)
 {
-	UNUSED_PARAMETER(settings);
-	
 	struct entei_caption_provider *provider = malloc(sizeof(struct entei_caption_provider));
 	provider->source = source;
+	provider->client = NULL;
+	provider->websocket_url = NULL;
+	
+	const char *url = obs_data_get_string(settings, "websocket_url");
+	if (url && strlen(url) > 0) {
+		provider->websocket_url = strdup(url);
+		provider->client = websocket_client_create(url);
+	}
 	
 	obs_log(LOG_INFO, "Entei caption provider created");
 	
@@ -26,6 +35,12 @@ static void *entei_caption_provider_create(obs_data_t *settings, obs_source_t *s
 static void entei_caption_provider_destroy(void *data)
 {
 	struct entei_caption_provider *provider = data;
+	
+	if (provider->client) {
+		websocket_client_destroy(provider->client);
+	}
+	
+	free(provider->websocket_url);
 	
 	obs_log(LOG_INFO, "Entei caption provider destroyed");
 	
