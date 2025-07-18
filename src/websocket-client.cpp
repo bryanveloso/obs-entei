@@ -4,7 +4,6 @@
 
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/client.hpp>
-#include <asio/io_context.hpp>
 
 #include <thread>
 #include <memory>
@@ -277,56 +276,6 @@ void websocket_client_set_connect_callback(struct websocket_client *client, webs
 	std::lock_guard<std::mutex> lock(client->callback_mutex);
 	client->connect_callback = callback;
 	client->connect_user_data = user_data;
-}
-
-} // extern "C"
-
-#else // !HAVE_WEBSOCKETPP
-
-extern "C" {
-
-struct websocket_client *websocket_client_create(const char *url)
-{
-	obs_log(LOG_ERROR, "WebSocket client not available - WebSocket++ not found");
-	return nullptr;
-}
-
-void websocket_client_destroy(struct websocket_client *client)
-{
-	// Nothing to do
-}
-
-bool websocket_client_connect(struct websocket_client *client)
-{
-	obs_log(LOG_ERROR, "WebSocket client connect requested but WebSocket++ not available");
-	return false;
-}
-
-void websocket_client_disconnect(struct websocket_client *client)
-{
-	// Nothing to do
-}
-
-bool websocket_client_is_connected(struct websocket_client *client)
-{
-	return false;
-}
-
-void websocket_client_send(struct websocket_client *client, const char *message)
-{
-	obs_log(LOG_ERROR, "WebSocket send requested but WebSocket++ not available");
-}
-
-void websocket_client_set_message_callback(struct websocket_client *client, websocket_message_callback_t callback,
-					   void *user_data)
-{
-	// Nothing to do
-}
-
-void websocket_client_set_connect_callback(struct websocket_client *client, websocket_connect_callback_t callback,
-					   void *user_data)
-{
-	// Nothing to do
 }
 
 } // extern "C"
