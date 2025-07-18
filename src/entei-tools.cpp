@@ -2,6 +2,7 @@
 #include "websocket-client.h"
 #include "phoenix-protocol.h"
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include "plugin-support.h"
 
 #include <QtWidgets/QDialog>
@@ -13,6 +14,7 @@
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QGroupBox>
 #include <QtCore/QDateTime>
+#include <QtCore/QTimer>
 
 class EnteiToolsDialog : public QDialog {
 	Q_OBJECT
@@ -38,6 +40,7 @@ private:
 	void sendHeartbeat();
 	void joinChannel(const QString &channel);
 	void processPhoenixMessage(const char *json);
+	void displayBufferedCaption();
 
 	static void websocket_connect_callback(bool connected, void *user_data);
 	static void websocket_message_callback(const char *message, size_t len, void *user_data);
@@ -56,6 +59,14 @@ private:
 	int message_ref_counter;
 	QString join_ref;
 	QString current_channel;
+	bool channel_joined;
+	
+	// Heartbeat timer for Phoenix connection
+	QTimer *heartbeatTimer;
+	
+	// Caption buffering
+	QString caption_buffer;
+	QTimer *caption_display_timer;
 };
 
 static EnteiToolsDialog *dialog = nullptr;
@@ -64,7 +75,10 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	: QDialog(parent),
 	  client(nullptr),
 	  isConnected(false),
-	  message_ref_counter(0)
+	  message_ref_counter(0),
+	  channel_joined(false),
+	  heartbeatTimer(nullptr),
+	  caption_display_timer(nullptr)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
@@ -73,6 +87,17 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 
 	// Generate a unique join reference for this session
 	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
+
+	// Setup heartbeat timer (Phoenix typically uses 30 second intervals)
+	heartbeatTimer = new QTimer(this);
+	heartbeatTimer->setInterval(30000); // 30 seconds
+	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendHeartbeat);
+	
+	// Setup caption display timer for buffering captions
+	caption_display_timer = new QTimer(this);
+	caption_display_timer->setSingleShot(true);
+	caption_display_timer->setInterval(2000); // 2 second delay for buffering
+	connect(caption_display_timer, &QTimer::timeout, this, &EnteiToolsDialog::displayBufferedCaption);
 
 	setupUI();
 }
@@ -182,6 +207,9 @@ void EnteiToolsDialog::onDisconnectClicked()
 		websocket_client_disconnect(client);
 		logTextEdit->append("Disconnecting...");
 	}
+	
+	// Stop heartbeat timer
+	heartbeatTimer->stop();
 }
 
 void EnteiToolsDialog::onWebSocketUrlChanged()
@@ -207,6 +235,9 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 
 		// Send initial heartbeat to establish Phoenix connection
 		sendHeartbeat();
+		
+		// Start periodic heartbeat timer
+		heartbeatTimer->start();
 
 		// Auto-join the specified channel
 		QString channel = channelEdit->text().trimmed();
@@ -216,6 +247,10 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 	} else {
 		logTextEdit->append("✗ Connection failed or disconnected");
 		current_channel.clear();
+		channel_joined = false;
+		
+		// Stop heartbeat timer
+		heartbeatTimer->stop();
 	}
 }
 
@@ -285,9 +320,11 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 		} else if (phoenix_is_join_reply(&message)) {
 			const char *status = phoenix_get_reply_status(&message);
 			if (status && strcmp(status, "ok") == 0) {
+				channel_joined = true;
 				logTextEdit->append(
 					QString("✓ Joined channel: %1").arg(message.topic ? message.topic : "unknown"));
 			} else {
+				channel_joined = false;
 				logTextEdit->append(
 					QString("✗ Failed to join channel: %1").arg(status ? status : "unknown error"));
 			}
@@ -302,13 +339,30 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 					const char *caption_text = cJSON_GetStringValue(text_item);
 					if (caption_text) {
 						logTextEdit->append(QString("Caption: %1").arg(caption_text));
-						// TODO: Send to OBS caption system
+						
+						// Buffer caption text for display
+						caption_buffer = QString::fromUtf8(caption_text);
+						caption_display_timer->start(); // Restart timer to delay display
 					}
 				}
 			}
 		}
 
 		phoenix_message_free(&message);
+	}
+}
+
+void EnteiToolsDialog::displayBufferedCaption()
+{
+	if (!caption_buffer.isEmpty()) {
+		// Send buffered caption to OBS caption system
+		QByteArray utf8_text = caption_buffer.toUtf8();
+		struct obs_output_caption caption;
+		caption.text = utf8_text.constData();
+		caption.timestamp = obs_get_video_frame_time();
+		obs_output_output_caption_text2(&caption, 0);
+		
+		caption_buffer.clear();
 	}
 }
 
