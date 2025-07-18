@@ -11,15 +11,25 @@ include(compilerconfig)
 include(defaults)
 include(helpers)
 
-# Add OBS Studio's cmake/finders to module path for FindAsio.cmake
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.1.1/cmake/finders")
+# Add OBS Studio's cmake/finders to module path for FindAsio.cmake (if it exists)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.1.1/cmake/finders")
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.1.1/cmake/finders")
+endif()
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 find_package(libobs REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Websocketpp 0.8.2 REQUIRED)
-find_package(Asio REQUIRED)
+# Try to find Asio, fallback to FetchContent if not found
+find_package(Asio QUIET)
+if(NOT Asio_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(asio GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git GIT_TAG asio-1-28-0)
+  FetchContent_MakeAvailable(asio)
+  add_library(Asio::Asio INTERFACE IMPORTED)
+  target_include_directories(Asio::Asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
+endif()
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
   PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio
