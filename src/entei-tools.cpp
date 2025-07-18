@@ -60,10 +60,10 @@ private:
 	QString join_ref;
 	QString current_channel;
 	bool channel_joined;
-	
+
 	// Heartbeat timer for Phoenix connection
 	QTimer *heartbeatTimer;
-	
+
 	// Caption buffering
 	QString caption_buffer;
 	QTimer *caption_display_timer;
@@ -92,7 +92,7 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	heartbeatTimer = new QTimer(this);
 	heartbeatTimer->setInterval(30000); // 30 seconds
 	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendHeartbeat);
-	
+
 	// Setup caption display timer for buffering captions
 	caption_display_timer = new QTimer(this);
 	caption_display_timer->setSingleShot(true);
@@ -207,7 +207,7 @@ void EnteiToolsDialog::onDisconnectClicked()
 		websocket_client_disconnect(client);
 		logTextEdit->append("Disconnecting...");
 	}
-	
+
 	// Stop heartbeat timer
 	heartbeatTimer->stop();
 }
@@ -235,7 +235,7 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 
 		// Send initial heartbeat to establish Phoenix connection
 		sendHeartbeat();
-		
+
 		// Start periodic heartbeat timer
 		heartbeatTimer->start();
 
@@ -248,7 +248,7 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 		logTextEdit->append("✗ Connection failed or disconnected");
 		current_channel.clear();
 		channel_joined = false;
-		
+
 		// Stop heartbeat timer
 		heartbeatTimer->stop();
 	}
@@ -339,7 +339,7 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 					const char *caption_text = cJSON_GetStringValue(text_item);
 					if (caption_text) {
 						logTextEdit->append(QString("Caption: %1").arg(caption_text));
-						
+
 						// Buffer caption text for display
 						caption_buffer = QString::fromUtf8(caption_text);
 						caption_display_timer->start(); // Restart timer to delay display
@@ -361,7 +361,7 @@ void EnteiToolsDialog::displayBufferedCaption()
 		caption.text = utf8_text.constData();
 		caption.timestamp = obs_get_video_frame_time();
 		obs_output_output_caption_text2(&caption, 0);
-		
+
 		caption_buffer.clear();
 	}
 }
