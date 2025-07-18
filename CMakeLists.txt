@@ -21,6 +21,7 @@ find_package(OpenSSL REQUIRED)
 find_package(Websocketpp 0.8.2 REQUIRED)
 find_package(Asio REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_WEBSOCKETPP ASIO_STANDALONE)
 
 # Windows-specific definitions
 if(WIN32)
