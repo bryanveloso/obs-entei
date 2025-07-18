@@ -21,11 +21,12 @@ target_include_directories(
   ${CMAKE_PROJECT_NAME}
   PRIVATE ${CMAKE_SOURCE_DIR}/.deps/websocketpp-0.8.2/websocketpp-0.8.2 ${CMAKE_SOURCE_DIR}/.deps/asio-asio-1-28-0/asio-asio-1-28-0/asio/include
 )
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WEBSOCKETPP_CPP11_STL_ HAVE_WEBSOCKETPP ASIO_STANDALONE)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WEBSOCKETPP_CPP11_STL_ HAVE_WEBSOCKETPP ASIO_STANDALONE ASIO_NO_SSL)
 
 # Windows-specific definitions
 if(WIN32)
   target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WIN32_WINNT=0x0603)
+  target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /wd4267)
 endif()
 
 if(ENABLE_FRONTEND_API)
