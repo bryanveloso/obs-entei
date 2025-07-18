@@ -16,11 +16,8 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 
-# Find WebSocket++ and Asio (following obs-websocket pattern)
-find_package(websocketpp REQUIRED)
-find_package(asio REQUIRED)
-
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE websocketpp::websocketpp asio::asio)
+# WebSocket++ and Asio are header-only libraries
+# Define that we have WebSocket++ available
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WEBSOCKETPP_CPP11_STL_ HAVE_WEBSOCKETPP)
 
 # Windows-specific definitions
