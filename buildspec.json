@@ -41,7 +41,7 @@
         },
         "asio": {
             "version": "1-28-0",
-            "baseUrl": "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio",
+            "baseUrl": "https://github.com/chriskohlhoff/asio/archive/refs/tags",
             "label": "Asio Headers",
             "hashes": {
                 "macos": "5c2af07ef73b42a2d48e34c0ecbf41cd40dc823bc681bf5833c129384999c963",

@@ -20,7 +20,7 @@ function(_check_dependencies_macos)
   set(obs-studio_destination "obs-studio-VERSION")
   set(websocketpp_filename "VERSION.tar.gz")
   set(websocketpp_destination "websocketpp-VERSION")
-  set(asio_filename "-VERSION.tar.gz")
+  set(asio_filename "asio-VERSION.tar.gz")
   set(asio_destination "asio-asio-VERSION")
   set(
     dependencies_list

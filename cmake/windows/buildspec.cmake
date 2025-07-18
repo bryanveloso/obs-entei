@@ -18,7 +18,7 @@ function(_check_dependencies_windows)
   set(obs-studio_destination "obs-studio-VERSION")
   set(websocketpp_filename "VERSION.zip")
   set(websocketpp_destination "websocketpp-VERSION")
-  set(asio_filename "-VERSION.zip")
+  set(asio_filename "asio-VERSION.zip")
   set(asio_destination "asio-asio-VERSION")
   set(
     dependencies_list
