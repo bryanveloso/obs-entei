@@ -207,8 +207,10 @@ void EnteiToolsDialog::websocket_message_callback(const char *message, size_t le
 	}, Qt::QueuedConnection);
 }
 
-static void entei_tools_menu_clicked(void)
+static void entei_tools_menu_clicked(void *private_data)
 {
+	UNUSED_PARAMETER(private_data);
+	
 	if (!dialog) {
 		dialog = new EnteiToolsDialog();
 	}
@@ -220,7 +222,7 @@ static void entei_tools_menu_clicked(void)
 
 void register_entei_tools_menu(void)
 {
-	obs_frontend_add_tools_menu_item("Entei Caption Provider", entei_tools_menu_clicked);
+	obs_frontend_add_tools_menu_item("Entei Caption Provider", entei_tools_menu_clicked, nullptr);
 	obs_log(LOG_INFO, "Entei Tools menu registered");
 }
 
