@@ -107,6 +107,11 @@ void websocket_client_destroy(struct websocket_client *client)
 
 	client->should_stop = true;
 
+	// Stop WebSocket client first
+	if (client->ws_client) {
+		client->ws_client->stop();
+	}
+
 	if (client->worker_thread && client->worker_thread->joinable()) {
 		if (client->io_context) {
 			client->io_context->stop();
