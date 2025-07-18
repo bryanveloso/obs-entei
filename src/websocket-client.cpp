@@ -107,17 +107,43 @@ void websocket_client_destroy(struct websocket_client *client)
 
 	client->should_stop = true;
 
-	// Stop WebSocket client first
-	if (client->ws_client) {
-		client->ws_client->stop();
+	// First disconnect if connected
+	if (client->connected && client->ws_client) {
+		try {
+			websocketpp::lib::error_code ec;
+			client->ws_client->close(client->connection_hdl, websocketpp::close::status::going_away, "", ec);
+			client->connected = false;
+		} catch (const std::exception &e) {
+			obs_log(LOG_WARNING, "Exception during WebSocket close: %s", e.what());
+		}
 	}
 
-	if (client->worker_thread && client->worker_thread->joinable()) {
-		if (client->io_context) {
-			client->io_context->stop();
+	// Stop WebSocket client and io_context
+	if (client->ws_client) {
+		try {
+			client->ws_client->stop();
+		} catch (const std::exception &e) {
+			obs_log(LOG_WARNING, "Exception during WebSocket stop: %s", e.what());
 		}
+	}
+
+	if (client->io_context) {
+		try {
+			client->io_context->stop();
+		} catch (const std::exception &e) {
+			obs_log(LOG_WARNING, "Exception during io_context stop: %s", e.what());
+		}
+	}
+
+	// Wait for worker thread to finish
+	if (client->worker_thread && client->worker_thread->joinable()) {
 		client->worker_thread->join();
 	}
+
+	// Clear smart pointers in proper order
+	client->worker_thread.reset();
+	client->ws_client.reset();
+	client->io_context.reset();
 
 	obs_log(LOG_INFO, "WebSocket client destroyed");
 	delete client;
