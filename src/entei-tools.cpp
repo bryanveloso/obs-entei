@@ -296,6 +296,7 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 			// Handle other message types (captions, etc.)
 			if (message.event && message.payload) {
 				const char *event = message.event;
+				(void)event; // May be used for different event types in future
 				cJSON *text_item = cJSON_GetObjectItem(message.payload, "text");
 
 				if (cJSON_IsString(text_item)) {

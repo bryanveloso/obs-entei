@@ -6,6 +6,7 @@
 
 char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const char *topic, cJSON *payload)
 {
+	(void)join_ref; // Not used in current implementation
 	// Phoenix message format: {"topic": "...", "event": "phx_join", "payload": {}, "ref": "..."}
 	cJSON *object = cJSON_CreateObject();
 	if (!object) {

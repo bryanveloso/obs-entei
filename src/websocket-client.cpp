@@ -13,7 +13,7 @@
 #include <string>
 #include <mutex>
 
-typedef websocketpp::client<websocketpp::config::asio_client> client;
+typedef websocketpp::client<websocketpp::config::asio_client> ws_client_t;
 typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
 
 struct websocket_client {
@@ -25,7 +25,7 @@ struct websocket_client {
 	bool should_stop;
 
 	// WebSocket++ objects
-	std::unique_ptr<client> ws_client;
+	std::unique_ptr<ws_client_t> ws_client;
 	websocketpp::connection_hdl connection_hdl;
 	std::unique_ptr<std::thread> worker_thread;
 	std::unique_ptr<asio::io_context> io_context;
@@ -131,7 +131,7 @@ bool websocket_client_connect(struct websocket_client *client)
 	try {
 		client->io_context = std::make_unique<asio::io_context>();
 
-		client->ws_client = std::make_unique<client>();
+		client->ws_client = std::make_unique<ws_client_t>();
 		client->ws_client->clear_access_channels(websocketpp::log::alevel::all);
 		client->ws_client->clear_error_channels(websocketpp::log::elevel::all);
 		client->ws_client->init_asio(client->io_context.get());
@@ -147,6 +147,7 @@ bool websocket_client_connect(struct websocket_client *client)
 		});
 
 		client->ws_client->set_fail_handler([client](websocketpp::connection_hdl hdl) {
+			(void)hdl;
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
 			obs_log(LOG_ERROR, "WebSocket connection failed");
 			client->connected = false;
@@ -156,6 +157,7 @@ bool websocket_client_connect(struct websocket_client *client)
 		});
 
 		client->ws_client->set_close_handler([client](websocketpp::connection_hdl hdl) {
+			(void)hdl;
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
 			obs_log(LOG_INFO, "WebSocket connection closed");
 			client->connected = false;
@@ -165,6 +167,7 @@ bool websocket_client_connect(struct websocket_client *client)
 		});
 
 		client->ws_client->set_message_handler([client](websocketpp::connection_hdl hdl, message_ptr msg) {
+			(void)hdl;
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
 			if (client->message_callback) {
 				const std::string &payload = msg->get_payload();
