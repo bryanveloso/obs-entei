@@ -33,13 +33,13 @@
     },
     "platformConfig": {
         "macos": {
-            "bundleId": "com.example.plugintemplate-for-obs"
+            "bundleId": "com.bryanveloso.obs-entei"
         }
     },
-    "name": "plugintemplate-for-obs",
-    "displayName": "Plugin Template for OBS",
+    "name": "obs-entei",
+    "displayName": "Entei Caption Provider",
     "version": "1.0.0",
-    "author": "Your Name Here",
-    "website": "https://example.com",
-    "email": "me@example.com"
+    "author": "Bryan Veloso",
+    "website": "https://github.com/bryanveloso/obs-entei",
+    "email": "bryan@velo.so"
 }
