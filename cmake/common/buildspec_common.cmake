@@ -217,7 +217,7 @@ function(_check_dependencies)
     elseif(dependency STREQUAL websocketpp)
       list(APPEND CMAKE_PREFIX_PATH "${dependencies_dir}/${destination}")
     elseif(dependency STREQUAL asio)
-      list(APPEND CMAKE_PREFIX_PATH "${dependencies_dir}/${destination}")
+      list(APPEND CMAKE_PREFIX_PATH "${dependencies_dir}/${destination}/asio")
     endif()
 
     message(STATUS "Setting up ${label} (${arch}) - done")
