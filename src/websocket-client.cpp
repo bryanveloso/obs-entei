@@ -4,7 +4,7 @@
 
 #ifdef HAVE_WEBSOCKETPP
 
-#include <websocketpp/config/asio_no_tls_client.hpp>
+#include <websocketpp/config/asio_client.hpp>
 #include <websocketpp/client.hpp>
 #include <asio/io_context.hpp>
 
@@ -13,8 +13,8 @@
 #include <string>
 #include <mutex>
 
-typedef websocketpp::client<websocketpp::config::asio_no_tls_client> client;
-typedef websocketpp::config::asio_no_tls_client::message_type::ptr message_ptr;
+typedef websocketpp::client<websocketpp::config::asio_client> client;
+typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
 
 struct websocket_client {
 	std::string url;
