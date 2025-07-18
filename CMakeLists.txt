@@ -23,10 +23,18 @@ find_package(Asio REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_WEBSOCKETPP ASIO_STANDALONE)
 
-# Windows-specific definitions
+# Windows-specific settings for WebSocket++
 if(WIN32)
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WIN32_WINNT=0x0603)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
+    _WIN32_WINNT=0x0603
+    _WEBSOCKETPP_CPP11_STL_
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    _CRT_SECURE_NO_WARNINGS
+  )
   target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /wd4267)
+  # Link Windows socket libraries required by WebSocket++
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 mswsock)
 endif()
 
 if(ENABLE_FRONTEND_API)
