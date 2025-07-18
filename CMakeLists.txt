@@ -24,7 +24,7 @@ target_link_libraries(
   ${CMAKE_PROJECT_NAME}
   PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio
 )
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_WEBSOCKETPP ASIO_STANDALONE)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ASIO_STANDALONE)
 
 # Windows-specific settings for WebSocket++
 if(WIN32)

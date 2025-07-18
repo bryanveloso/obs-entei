@@ -2,9 +2,7 @@
 #include <obs-module.h>
 #include "plugin-support.h"
 
-#ifdef HAVE_WEBSOCKETPP
-
-#include <websocketpp/config/asio_client.hpp>
+#include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/client.hpp>
 #include <asio/io_context.hpp>
 
@@ -13,8 +11,8 @@
 #include <string>
 #include <mutex>
 
-typedef websocketpp::client<websocketpp::config::asio_client> ws_client_t;
-typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
+typedef websocketpp::client<websocketpp::config::asio> ws_client_t;
+typedef websocketpp::config::asio::message_type::ptr message_ptr;
 
 struct websocket_client {
 	std::string url;
@@ -332,5 +330,3 @@ void websocket_client_set_connect_callback(struct websocket_client *client, webs
 }
 
 } // extern "C"
-
-#endif // HAVE_WEBSOCKETPP
