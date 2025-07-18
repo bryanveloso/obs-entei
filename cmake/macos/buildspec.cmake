@@ -18,17 +18,11 @@ function(_check_dependencies_macos)
   set(qt6_destination "obs-deps-qt6-VERSION-ARCH")
   set(obs-studio_filename "VERSION.tar.gz")
   set(obs-studio_destination "obs-studio-VERSION")
-  set(websocketpp_filename "VERSION.tar.gz")
-  set(websocketpp_destination "websocketpp-VERSION")
-  set(asio_filename "VERSION.tar.gz")
-  set(asio_destination "asio-VERSION")
   set(
     dependencies_list
     prebuilt
     qt6
     obs-studio
-    websocketpp
-    asio
   )
 
   _check_dependencies()

@@ -16,17 +16,11 @@ function(_check_dependencies_windows)
   set(qt6_destination "obs-deps-qt6-VERSION-ARCH")
   set(obs-studio_filename "VERSION.zip")
   set(obs-studio_destination "obs-studio-VERSION")
-  set(websocketpp_filename "VERSION.zip")
-  set(websocketpp_destination "websocketpp-VERSION")
-  set(asio_filename "VERSION.zip")
-  set(asio_destination "asio-VERSION")
   set(
     dependencies_list
     prebuilt
     qt6
     obs-studio
-    websocketpp
-    asio
   )
 
   _check_dependencies()
