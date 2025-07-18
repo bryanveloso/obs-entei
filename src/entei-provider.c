@@ -8,6 +8,11 @@ struct entei_caption_provider {
 	char *websocket_url;
 };
 
+// Forward declarations
+static void on_websocket_connect(bool connected, void *user_data);
+static void on_websocket_message(const char *message, size_t len, void *user_data);
+static bool connect_button_clicked(obs_properties_t *props, obs_property_t *property, void *data);
+
 static const char *entei_caption_provider_get_name(void *unused)
 {
 	UNUSED_PARAMETER(unused);
