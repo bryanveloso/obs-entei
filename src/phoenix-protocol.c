@@ -6,25 +6,26 @@
 
 char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const char *topic, cJSON *payload)
 {
-	// Phoenix message format: [join_ref, msg_ref, topic, event, payload]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix message format: {"topic": "...", "event": "phx_join", "payload": {}, "ref": "..."}
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 
-	cJSON_AddItemToArray(array, cJSON_CreateString(join_ref ? join_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_JOIN));
+	cJSON_AddStringToObject(object, "topic", topic ? topic : "");
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_JOIN);
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
 
 	if (payload) {
-		cJSON_AddItemToArray(array, cJSON_Duplicate(payload, 1));
+		cJSON_AddItemToObject(object, "payload", cJSON_Duplicate(payload, 1));
 	} else {
-		cJSON_AddItemToArray(array, cJSON_CreateObject());
+		cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
 	}
 
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	// Note: join_ref is not used in object format, only ref
+
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -38,20 +39,19 @@ char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const 
 
 char *phoenix_create_leave_json(const char *msg_ref, const char *topic)
 {
-	// Phoenix message format: [null, msg_ref, topic, "phx_leave", {}]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix message format: {"topic": "...", "event": "phx_leave", "payload": {}, "ref": "..."}
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 
-	cJSON_AddItemToArray(array, cJSON_CreateNull());
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_LEAVE));
-	cJSON_AddItemToArray(array, cJSON_CreateObject());
+	cJSON_AddStringToObject(object, "topic", topic ? topic : "");
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_LEAVE);
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
+	cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
 
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -65,20 +65,19 @@ char *phoenix_create_leave_json(const char *msg_ref, const char *topic)
 
 char *phoenix_create_heartbeat_json(const char *msg_ref)
 {
-	// Phoenix message format: [null, msg_ref, "phoenix", "heartbeat", {}]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix message format: {"topic": "phoenix", "event": "heartbeat", "payload": {}, "ref": "..."}
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 
-	cJSON_AddItemToArray(array, cJSON_CreateNull());
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_TOPIC_PHOENIX));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_HEARTBEAT));
-	cJSON_AddItemToArray(array, cJSON_CreateObject());
+	cJSON_AddStringToObject(object, "topic", PHOENIX_TOPIC_PHOENIX);
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_HEARTBEAT);
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
+	cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
 
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -98,38 +97,16 @@ bool phoenix_parse_message(const char *json, phoenix_message_t *message)
 
 	memset(message, 0, sizeof(phoenix_message_t));
 
-	cJSON *array = cJSON_Parse(json);
-	if (!array || !cJSON_IsArray(array)) {
+	cJSON *object = cJSON_Parse(json);
+	if (!object || !cJSON_IsObject(object)) {
 		return false;
 	}
 
-	if (cJSON_GetArraySize(array) < 5) {
-		cJSON_Delete(array);
-		return false;
-	}
-
-	// Parse array elements: [join_ref, msg_ref, topic, event, payload]
-	cJSON *join_ref_item = cJSON_GetArrayItem(array, 0);
-	cJSON *msg_ref_item = cJSON_GetArrayItem(array, 1);
-	cJSON *topic_item = cJSON_GetArrayItem(array, 2);
-	cJSON *event_item = cJSON_GetArrayItem(array, 3);
-	cJSON *payload_item = cJSON_GetArrayItem(array, 4);
-
-	// Extract join_ref
-	if (join_ref_item && cJSON_IsString(join_ref_item)) {
-		const char *str = cJSON_GetStringValue(join_ref_item);
-		if (str && strlen(str) > 0) {
-			message->join_ref = bstrdup(str);
-		}
-	}
-
-	// Extract msg_ref
-	if (msg_ref_item && cJSON_IsString(msg_ref_item)) {
-		const char *str = cJSON_GetStringValue(msg_ref_item);
-		if (str) {
-			message->msg_ref = bstrdup(str);
-		}
-	}
+	// Parse object fields: {"topic": "...", "event": "...", "payload": {}, "ref": "..."}
+	cJSON *topic_item = cJSON_GetObjectItem(object, "topic");
+	cJSON *event_item = cJSON_GetObjectItem(object, "event");
+	cJSON *ref_item = cJSON_GetObjectItem(object, "ref");
+	cJSON *payload_item = cJSON_GetObjectItem(object, "payload");
 
 	// Extract topic
 	if (topic_item && cJSON_IsString(topic_item)) {
@@ -147,12 +124,23 @@ bool phoenix_parse_message(const char *json, phoenix_message_t *message)
 		}
 	}
 
+	// Extract ref (used as msg_ref)
+	if (ref_item && cJSON_IsString(ref_item)) {
+		const char *str = cJSON_GetStringValue(ref_item);
+		if (str) {
+			message->msg_ref = bstrdup(str);
+		}
+	}
+
 	// Extract payload
 	if (payload_item) {
 		message->payload = cJSON_Duplicate(payload_item, 1);
 	}
 
-	cJSON_Delete(array);
+	// Note: join_ref is not used in object format replies
+	message->join_ref = NULL;
+
+	cJSON_Delete(object);
 	return true;
 }
 

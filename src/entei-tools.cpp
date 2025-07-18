@@ -43,6 +43,7 @@ private:
 	static void websocket_message_callback(const char *message, size_t len, void *user_data);
 
 	QLineEdit *websocketUrlEdit;
+	QLineEdit *channelEdit;
 	QPushButton *connectButton;
 	QPushButton *disconnectButton;
 	QLabel *statusLabel;
@@ -98,6 +99,13 @@ void EnteiToolsDialog::setupUI()
 	websocketUrlEdit = new QLineEdit("ws://saya:7175/socket/websocket?vsn=2.0.0");
 	urlLayout->addWidget(websocketUrlEdit);
 	connectionLayout->addLayout(urlLayout);
+
+	// Channel input
+	QHBoxLayout *channelLayout = new QHBoxLayout();
+	channelLayout->addWidget(new QLabel("Channel:"));
+	channelEdit = new QLineEdit("transcription:live");
+	channelLayout->addWidget(channelEdit);
+	connectionLayout->addLayout(channelLayout);
 
 	// Connect/Disconnect buttons
 	QHBoxLayout *buttonLayout = new QHBoxLayout();
@@ -199,8 +207,11 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 		// Send initial heartbeat to establish Phoenix connection
 		sendHeartbeat();
 
-		// Auto-join a test channel (you can modify this)
-		joinChannel("captions:lobby");
+		// Auto-join the specified channel
+		QString channel = channelEdit->text().trimmed();
+		if (!channel.isEmpty()) {
+			joinChannel(channel);
+		}
 	} else {
 		logTextEdit->append("✗ Connection failed or disconnected");
 		current_channel.clear();
