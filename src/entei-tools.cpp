@@ -357,7 +357,11 @@ void EnteiToolsDialog::displayBufferedCaption()
 	if (!caption_buffer.isEmpty()) {
 		// Send buffered caption to OBS caption system
 		QByteArray utf8_text = caption_buffer.toUtf8();
-		obs_output_output_caption_text2(utf8_text.constData(), obs_get_video_frame_time());
+		obs_output_t *output = obs_frontend_get_streaming_output();
+		if (output) {
+			obs_output_output_caption_text2(output, utf8_text.constData(), 0.0);
+			obs_output_release(output);
+		}
 
 		caption_buffer.clear();
 	}
