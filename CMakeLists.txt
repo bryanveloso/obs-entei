@@ -12,7 +12,7 @@ include(defaults)
 include(helpers)
 
 # Add OBS Studio's cmake/finders to module path for FindAsio.cmake
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.0.0/cmake/finders")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.1.1/cmake/finders")
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
