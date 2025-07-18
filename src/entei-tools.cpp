@@ -68,9 +68,8 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
-	resize(400, 300);
-	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-	setFixedSize(400, 300);
+	resize(500, 400);
+	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 
 	// Generate a unique join reference for this session
 	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
