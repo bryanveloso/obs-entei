@@ -17,19 +17,20 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-studio-31.0
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 find_package(libobs REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Websocketpp 0.8.2 REQUIRED)
 find_package(Asio REQUIRED)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs Websocketpp::Websocketpp Asio::Asio)
+target_link_libraries(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio
+)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_WEBSOCKETPP ASIO_STANDALONE)
 
 # Windows-specific settings for WebSocket++
 if(WIN32)
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
-    _WIN32_WINNT=0x0603
-    _WEBSOCKETPP_CPP11_STL_
-    WIN32_LEAN_AND_MEAN
-    NOMINMAX
-    _CRT_SECURE_NO_WARNINGS
+  target_compile_definitions(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE _WIN32_WINNT=0x0603 _WEBSOCKETPP_CPP11_STL_ NOMINMAX _CRT_SECURE_NO_WARNINGS
   )
   target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE /wd4267)
   # Link Windows socket libraries required by WebSocket++
