@@ -15,16 +15,9 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 find_package(libobs REQUIRED)
 find_package(OpenSSL REQUIRED)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto)
-
-# WebSocket++ and Asio dependencies (header-only libraries from buildspec.json)
-target_include_directories(
-  ${CMAKE_PROJECT_NAME}
-  PRIVATE
-    ${CMAKE_SOURCE_DIR}/.deps/websocketpp-0.8.2/websocketpp-0.8.2
-    ${CMAKE_SOURCE_DIR}/.deps/asio-asio-1-28-0/asio-asio-1-28-0/asio/include
-)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WEBSOCKETPP_CPP11_STL_ HAVE_WEBSOCKETPP ASIO_STANDALONE)
+find_package(Websocketpp 0.8 REQUIRED)
+find_package(Asio REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio)
 
 # Windows-specific definitions
 if(WIN32)
