@@ -68,7 +68,9 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
-	resize(500, 400);
+	resize(400, 300);
+	setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+	setFixedSize(400, 300);
 
 	// Generate a unique join reference for this session
 	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -134,7 +136,7 @@ void EnteiToolsDialog::setupUI()
 
 	logTextEdit = new QTextEdit();
 	logTextEdit->setReadOnly(true);
-	logTextEdit->setMaximumHeight(200);
+	logTextEdit->setMaximumHeight(120);
 	logLayout->addWidget(logTextEdit);
 
 	mainLayout->addWidget(logGroup);

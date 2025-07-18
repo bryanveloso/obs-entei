@@ -16,15 +16,19 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 
-# Try to find libwebsockets
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-  pkg_check_modules(LIBWEBSOCKETS QUIET libwebsockets)
-  if(LIBWEBSOCKETS_FOUND)
-    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${LIBWEBSOCKETS_LIBRARIES})
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${LIBWEBSOCKETS_INCLUDE_DIRS})
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_LIBWEBSOCKETS)
-  endif()
+# Find WebSocket++ and Asio (following obs-websocket pattern)
+find_package(websocketpp CONFIG REQUIRED)
+find_package(asio CONFIG REQUIRED)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE websocketpp::websocketpp asio::asio)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE 
+  _WEBSOCKETPP_CPP11_STL_
+  HAVE_WEBSOCKETPP
+)
+
+# Windows-specific definitions
+if(WIN32)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE _WIN32_WINNT=0x0603)
 endif()
 
 if(ENABLE_FRONTEND_API)
@@ -47,7 +51,7 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.c src/websocket-client.c src/phoenix-protocol.c src/cJSON.c src/entei-tools.cpp
+  PRIVATE src/plugin-main.c src/websocket-client.cpp src/phoenix-protocol.c src/cJSON.c src/entei-tools.cpp
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
