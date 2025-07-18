@@ -4,92 +4,90 @@
 #include <stdlib.h>
 #include <string.h>
 
-obs_data_array_t *phoenix_create_join(const char *join_ref, const char *msg_ref, 
-                                      const char *topic, obs_data_t *payload)
+char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const char *topic, cJSON *payload)
 {
-	obs_data_array_t *array = obs_data_array_create();
-	
-	obs_data_t *join_ref_item = obs_data_create();
-	obs_data_set_string(join_ref_item, "value", join_ref ? join_ref : "");
-	obs_data_array_push_back_string(array, join_ref ? join_ref : "");
-	obs_data_release(join_ref_item);
-	
-	obs_data_array_push_back_string(array, msg_ref ? msg_ref : "");
-	obs_data_array_push_back_string(array, topic ? topic : "");
-	obs_data_array_push_back_string(array, PHOENIX_EVENT_JOIN);
-	
-	if (payload) {
-		obs_data_array_push_back_obj(array, payload);
-	} else {
-		obs_data_t *empty_payload = obs_data_create();
-		obs_data_array_push_back_obj(array, empty_payload);
-		obs_data_release(empty_payload);
-	}
-	
-	return array;
-}
-
-obs_data_array_t *phoenix_create_leave(const char *msg_ref, const char *topic)
-{
-	obs_data_array_t *array = obs_data_array_create();
-	
-	obs_data_array_push_back_string(array, ""); // null join_ref for leave
-	obs_data_array_push_back_string(array, msg_ref ? msg_ref : "");
-	obs_data_array_push_back_string(array, topic ? topic : "");
-	obs_data_array_push_back_string(array, PHOENIX_EVENT_LEAVE);
-	
-	obs_data_t *empty_payload = obs_data_create();
-	obs_data_array_push_back_obj(array, empty_payload);
-	obs_data_release(empty_payload);
-	
-	return array;
-}
-
-obs_data_array_t *phoenix_create_heartbeat(const char *msg_ref)
-{
-	obs_data_array_t *array = obs_data_array_create();
-	
-	obs_data_array_push_back_string(array, ""); // null join_ref for heartbeat
-	obs_data_array_push_back_string(array, msg_ref ? msg_ref : "");
-	obs_data_array_push_back_string(array, PHOENIX_TOPIC_PHOENIX);
-	obs_data_array_push_back_string(array, PHOENIX_EVENT_HEARTBEAT);
-	
-	obs_data_t *empty_payload = obs_data_create();
-	obs_data_array_push_back_obj(array, empty_payload);
-	obs_data_release(empty_payload);
-	
-	return array;
-}
-
-char *phoenix_message_to_json(obs_data_array_t *message)
-{
-	if (!message) {
+	// Phoenix message format: [join_ref, msg_ref, topic, event, payload]
+	cJSON *array = cJSON_CreateArray();
+	if (!array) {
 		return NULL;
 	}
-	
-	obs_data_t *wrapper = obs_data_create();
-	obs_data_set_array(wrapper, "message", message);
-	
-	const char *json = obs_data_get_json(wrapper);
-	char *result = NULL;
-	
-	if (json) {
-		// Extract just the array part from {"message":[...]}
-		const char *array_start = strchr(json, '[');
-		const char *array_end = strrchr(json, ']');
-		
-		if (array_start && array_end && array_end > array_start) {
-			size_t array_len = array_end - array_start + 1;
-			result = bmalloc(array_len + 1);
-			if (result) {
-				memcpy(result, array_start, array_len);
-				result[array_len] = '\0';
-			}
-		}
+
+	cJSON_AddItemToArray(array, cJSON_CreateString(join_ref ? join_ref : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_JOIN));
+
+	if (payload) {
+		cJSON_AddItemToArray(array, cJSON_Duplicate(payload, 1));
+	} else {
+		cJSON_AddItemToArray(array, cJSON_CreateObject());
 	}
-	
-	obs_data_release(wrapper);
-	return result;
+
+	char *json_string = cJSON_PrintUnformatted(array);
+	cJSON_Delete(array);
+
+	// Convert to OBS memory management
+	if (json_string) {
+		char *result = bstrdup(json_string);
+		free(json_string);
+		return result;
+	}
+
+	return NULL;
+}
+
+char *phoenix_create_leave_json(const char *msg_ref, const char *topic)
+{
+	// Phoenix message format: [null, msg_ref, topic, "phx_leave", {}]
+	cJSON *array = cJSON_CreateArray();
+	if (!array) {
+		return NULL;
+	}
+
+	cJSON_AddItemToArray(array, cJSON_CreateNull());
+	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_LEAVE));
+	cJSON_AddItemToArray(array, cJSON_CreateObject());
+
+	char *json_string = cJSON_PrintUnformatted(array);
+	cJSON_Delete(array);
+
+	// Convert to OBS memory management
+	if (json_string) {
+		char *result = bstrdup(json_string);
+		free(json_string);
+		return result;
+	}
+
+	return NULL;
+}
+
+char *phoenix_create_heartbeat_json(const char *msg_ref)
+{
+	// Phoenix message format: [null, msg_ref, "phoenix", "heartbeat", {}]
+	cJSON *array = cJSON_CreateArray();
+	if (!array) {
+		return NULL;
+	}
+
+	cJSON_AddItemToArray(array, cJSON_CreateNull());
+	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
+	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_TOPIC_PHOENIX));
+	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_HEARTBEAT));
+	cJSON_AddItemToArray(array, cJSON_CreateObject());
+
+	char *json_string = cJSON_PrintUnformatted(array);
+	cJSON_Delete(array);
+
+	// Convert to OBS memory management
+	if (json_string) {
+		char *result = bstrdup(json_string);
+		free(json_string);
+		return result;
+	}
+
+	return NULL;
 }
 
 bool phoenix_parse_message(const char *json, phoenix_message_t *message)
@@ -97,102 +95,64 @@ bool phoenix_parse_message(const char *json, phoenix_message_t *message)
 	if (!json || !message) {
 		return false;
 	}
-	
+
 	memset(message, 0, sizeof(phoenix_message_t));
-	
-	obs_data_array_t *array = NULL;
-	obs_data_t *data = obs_data_create_from_json(json);
-	
-	if (!data) {
+
+	cJSON *array = cJSON_Parse(json);
+	if (!array || !cJSON_IsArray(array)) {
 		return false;
 	}
-	
-	// Check if it's a direct array or wrapped in an object
-	array = obs_data_get_array(data, "message");
-	if (!array) {
-		// Try parsing as direct array by wrapping it
-		obs_data_release(data);
-		
-		char *wrapped_json = bmalloc(strlen(json) + 20);
-		if (!wrapped_json) {
-			return false;
-		}
-		
-		sprintf(wrapped_json, "{\"array\":%s}", json);
-		data = obs_data_create_from_json(wrapped_json);
-		bfree(wrapped_json);
-		
-		if (!data) {
-			return false;
-		}
-		
-		array = obs_data_get_array(data, "array");
-	}
-	
-	if (!array || obs_data_array_count(array) < 5) {
-		obs_data_release(data);
-		if (array) obs_data_array_release(array);
+
+	if (cJSON_GetArraySize(array) < 5) {
+		cJSON_Delete(array);
 		return false;
 	}
-	
+
 	// Parse array elements: [join_ref, msg_ref, topic, event, payload]
-	obs_data_t *item;
-	
-	// join_ref (index 0)
-	item = obs_data_array_item(array, 0);
-	if (item) {
-		const char *join_ref = obs_data_get_string(item, "value");
-		if (!join_ref) join_ref = obs_data_get_string(item, "");
-		if (join_ref && strlen(join_ref) > 0) {
-			message->join_ref = bstrdup(join_ref);
+	cJSON *join_ref_item = cJSON_GetArrayItem(array, 0);
+	cJSON *msg_ref_item = cJSON_GetArrayItem(array, 1);
+	cJSON *topic_item = cJSON_GetArrayItem(array, 2);
+	cJSON *event_item = cJSON_GetArrayItem(array, 3);
+	cJSON *payload_item = cJSON_GetArrayItem(array, 4);
+
+	// Extract join_ref
+	if (join_ref_item && cJSON_IsString(join_ref_item)) {
+		const char *str = cJSON_GetStringValue(join_ref_item);
+		if (str && strlen(str) > 0) {
+			message->join_ref = bstrdup(str);
 		}
-		obs_data_release(item);
 	}
-	
-	// msg_ref (index 1)
-	item = obs_data_array_item(array, 1);
-	if (item) {
-		const char *msg_ref = obs_data_get_string(item, "value");
-		if (!msg_ref) msg_ref = obs_data_get_string(item, "");
-		if (msg_ref) {
-			message->msg_ref = bstrdup(msg_ref);
+
+	// Extract msg_ref
+	if (msg_ref_item && cJSON_IsString(msg_ref_item)) {
+		const char *str = cJSON_GetStringValue(msg_ref_item);
+		if (str) {
+			message->msg_ref = bstrdup(str);
 		}
-		obs_data_release(item);
 	}
-	
-	// topic (index 2)
-	item = obs_data_array_item(array, 2);
-	if (item) {
-		const char *topic = obs_data_get_string(item, "value");
-		if (!topic) topic = obs_data_get_string(item, "");
-		if (topic) {
-			message->topic = bstrdup(topic);
+
+	// Extract topic
+	if (topic_item && cJSON_IsString(topic_item)) {
+		const char *str = cJSON_GetStringValue(topic_item);
+		if (str) {
+			message->topic = bstrdup(str);
 		}
-		obs_data_release(item);
 	}
-	
-	// event (index 3)
-	item = obs_data_array_item(array, 3);
-	if (item) {
-		const char *event = obs_data_get_string(item, "value");
-		if (!event) event = obs_data_get_string(item, "");
-		if (event) {
-			message->event = bstrdup(event);
+
+	// Extract event
+	if (event_item && cJSON_IsString(event_item)) {
+		const char *str = cJSON_GetStringValue(event_item);
+		if (str) {
+			message->event = bstrdup(str);
 		}
-		obs_data_release(item);
 	}
-	
-	// payload (index 4)
-	item = obs_data_array_item(array, 4);
-	if (item) {
-		message->payload = item;
-		obs_data_addref(message->payload);
-		obs_data_release(item);
+
+	// Extract payload
+	if (payload_item) {
+		message->payload = cJSON_Duplicate(payload_item, 1);
 	}
-	
-	obs_data_array_release(array);
-	obs_data_release(data);
-	
+
+	cJSON_Delete(array);
 	return true;
 }
 
@@ -201,51 +161,46 @@ void phoenix_message_free(phoenix_message_t *message)
 	if (!message) {
 		return;
 	}
-	
+
 	if (message->join_ref) {
 		bfree(message->join_ref);
 		message->join_ref = NULL;
 	}
-	
+
 	if (message->msg_ref) {
 		bfree(message->msg_ref);
 		message->msg_ref = NULL;
 	}
-	
+
 	if (message->topic) {
 		bfree(message->topic);
 		message->topic = NULL;
 	}
-	
+
 	if (message->event) {
 		bfree(message->event);
 		message->event = NULL;
 	}
-	
+
 	if (message->payload) {
-		obs_data_release(message->payload);
+		cJSON_Delete(message->payload);
 		message->payload = NULL;
 	}
 }
 
 bool phoenix_is_reply(const phoenix_message_t *message)
 {
-	return message && message->event && 
-	       strcmp(message->event, PHOENIX_EVENT_REPLY) == 0;
+	return message && message->event && strcmp(message->event, PHOENIX_EVENT_REPLY) == 0;
 }
 
 bool phoenix_is_heartbeat_reply(const phoenix_message_t *message)
 {
-	return phoenix_is_reply(message) && 
-	       message->topic && 
-	       strcmp(message->topic, PHOENIX_TOPIC_PHOENIX) == 0;
+	return phoenix_is_reply(message) && message->topic && strcmp(message->topic, PHOENIX_TOPIC_PHOENIX) == 0;
 }
 
 bool phoenix_is_join_reply(const phoenix_message_t *message)
 {
-	return phoenix_is_reply(message) && 
-	       message->topic && 
-	       strcmp(message->topic, PHOENIX_TOPIC_PHOENIX) != 0;
+	return phoenix_is_reply(message) && message->topic && strcmp(message->topic, PHOENIX_TOPIC_PHOENIX) != 0;
 }
 
 const char *phoenix_get_reply_status(const phoenix_message_t *message)
@@ -253,20 +208,25 @@ const char *phoenix_get_reply_status(const phoenix_message_t *message)
 	if (!phoenix_is_reply(message) || !message->payload) {
 		return NULL;
 	}
-	
-	return obs_data_get_string(message->payload, "status");
+
+	cJSON *status = cJSON_GetObjectItem(message->payload, "status");
+	if (cJSON_IsString(status)) {
+		return cJSON_GetStringValue(status);
+	}
+
+	return NULL;
 }
 
-obs_data_t *phoenix_get_reply_response(const phoenix_message_t *message)
+cJSON *phoenix_get_reply_response(const phoenix_message_t *message)
 {
 	if (!phoenix_is_reply(message) || !message->payload) {
 		return NULL;
 	}
-	
-	obs_data_t *response = obs_data_get_obj(message->payload, "response");
+
+	cJSON *response = cJSON_GetObjectItem(message->payload, "response");
 	if (response) {
-		obs_data_addref(response);
+		return cJSON_Duplicate(response, 1);
 	}
-	
-	return response;
+
+	return NULL;
 }

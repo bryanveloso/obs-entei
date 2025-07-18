@@ -1,7 +1,7 @@
 #pragma once
 
-#include <obs-data.h>
 #include <stdbool.h>
+#include "cJSON.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,16 +22,13 @@ typedef struct {
 	char *msg_ref;
 	char *topic;
 	char *event;
-	obs_data_t *payload;
+	cJSON *payload;
 } phoenix_message_t;
 
-// Phoenix protocol functions
-obs_data_array_t *phoenix_create_join(const char *join_ref, const char *msg_ref, 
-                                      const char *topic, obs_data_t *payload);
-obs_data_array_t *phoenix_create_leave(const char *msg_ref, const char *topic);
-obs_data_array_t *phoenix_create_heartbeat(const char *msg_ref);
-
-char *phoenix_message_to_json(obs_data_array_t *message);
+// Phoenix protocol functions - return JSON strings directly
+char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const char *topic, cJSON *payload);
+char *phoenix_create_leave_json(const char *msg_ref, const char *topic);
+char *phoenix_create_heartbeat_json(const char *msg_ref);
 
 bool phoenix_parse_message(const char *json, phoenix_message_t *message);
 void phoenix_message_free(phoenix_message_t *message);
@@ -41,7 +38,7 @@ bool phoenix_is_heartbeat_reply(const phoenix_message_t *message);
 bool phoenix_is_join_reply(const phoenix_message_t *message);
 
 const char *phoenix_get_reply_status(const phoenix_message_t *message);
-obs_data_t *phoenix_get_reply_response(const phoenix_message_t *message);
+cJSON *phoenix_get_reply_response(const phoenix_message_t *message);
 
 #ifdef __cplusplus
 }
