@@ -107,11 +107,21 @@ void websocket_client_destroy(struct websocket_client *client)
 
 	client->should_stop = true;
 
+	// Clear callback pointers first to prevent race conditions
+	{
+		std::lock_guard<std::mutex> lock(client->callback_mutex);
+		client->message_callback = nullptr;
+		client->connect_callback = nullptr;
+		client->message_user_data = nullptr;
+		client->connect_user_data = nullptr;
+	}
+
 	// First disconnect if connected
 	if (client->connected && client->ws_client) {
 		try {
 			websocketpp::lib::error_code ec;
-			client->ws_client->close(client->connection_hdl, websocketpp::close::status::going_away, "", ec);
+			client->ws_client->close(client->connection_hdl, websocketpp::close::status::going_away, "",
+						 ec);
 			client->connected = false;
 		} catch (const std::exception &e) {
 			obs_log(LOG_WARNING, "Exception during WebSocket close: %s", e.what());
@@ -169,7 +179,7 @@ bool websocket_client_connect(struct websocket_client *client)
 			obs_log(LOG_INFO, "WebSocket connection established");
 			client->connected = true;
 			client->connection_hdl = hdl;
-			if (client->connect_callback) {
+			if (client->connect_callback && !client->should_stop) {
 				client->connect_callback(true, client->connect_user_data);
 			}
 		});
@@ -179,7 +189,7 @@ bool websocket_client_connect(struct websocket_client *client)
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
 			obs_log(LOG_ERROR, "WebSocket connection failed");
 			client->connected = false;
-			if (client->connect_callback) {
+			if (client->connect_callback && !client->should_stop) {
 				client->connect_callback(false, client->connect_user_data);
 			}
 		});
@@ -189,7 +199,7 @@ bool websocket_client_connect(struct websocket_client *client)
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
 			obs_log(LOG_INFO, "WebSocket connection closed");
 			client->connected = false;
-			if (client->connect_callback) {
+			if (client->connect_callback && !client->should_stop) {
 				client->connect_callback(false, client->connect_user_data);
 			}
 		});
@@ -197,7 +207,7 @@ bool websocket_client_connect(struct websocket_client *client)
 		client->ws_client->set_message_handler([client](websocketpp::connection_hdl hdl, message_ptr msg) {
 			(void)hdl;
 			std::lock_guard<std::mutex> lock(client->callback_mutex);
-			if (client->message_callback) {
+			if (client->message_callback && !client->should_stop) {
 				const std::string &payload = msg->get_payload();
 				client->message_callback(payload.c_str(), payload.size(), client->message_user_data);
 			}

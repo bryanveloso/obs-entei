@@ -15,6 +15,7 @@
 #include <QtWidgets/QGroupBox>
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
+#include <QtGui/QCloseEvent>
 
 class EnteiToolsDialog : public QDialog {
 	Q_OBJECT
@@ -22,6 +23,9 @@ class EnteiToolsDialog : public QDialog {
 public:
 	EnteiToolsDialog(QWidget *parent = nullptr);
 	~EnteiToolsDialog();
+
+protected:
+	void closeEvent(QCloseEvent *event) override;
 
 private slots:
 	void onConnectClicked();
@@ -99,16 +103,34 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	caption_display_timer->setInterval(2000); // 2 second delay for buffering
 	connect(caption_display_timer, &QTimer::timeout, this, &EnteiToolsDialog::displayBufferedCaption);
 
+	// Clear static pointer when this dialog is destroyed
+	connect(this, &QObject::destroyed, []() { dialog = nullptr; });
+
 	setupUI();
 }
 
 EnteiToolsDialog::~EnteiToolsDialog()
 {
+	// Stop timers first to prevent callbacks after destruction starts
+	if (heartbeatTimer) {
+		heartbeatTimer->stop();
+	}
+	if (caption_display_timer) {
+		caption_display_timer->stop();
+	}
+
 	if (client) {
 		websocket_client_disconnect(client);
 		websocket_client_destroy(client);
 		client = nullptr;
 	}
+}
+
+void EnteiToolsDialog::closeEvent(QCloseEvent *event)
+{
+	// Clear static pointer when dialog is closed by user
+	dialog = nullptr;
+	QDialog::closeEvent(event);
 }
 
 void EnteiToolsDialog::setupUI()
@@ -208,8 +230,13 @@ void EnteiToolsDialog::onDisconnectClicked()
 		logTextEdit->append("Disconnecting...");
 	}
 
-	// Stop heartbeat timer
-	heartbeatTimer->stop();
+	// Stop timers
+	if (heartbeatTimer) {
+		heartbeatTimer->stop();
+	}
+	if (caption_display_timer) {
+		caption_display_timer->stop();
+	}
 }
 
 void EnteiToolsDialog::onWebSocketUrlChanged()
@@ -280,6 +307,11 @@ void EnteiToolsDialog::sendPhoenixMessage(const char *json_message)
 
 void EnteiToolsDialog::sendHeartbeat()
 {
+	// Add defensive check in case timer fires after disconnect
+	if (!isConnected || !client) {
+		return;
+	}
+
 	QString msg_ref = getNextMessageRef();
 	char *heartbeat_json = phoenix_create_heartbeat_json(msg_ref.toUtf8().constData());
 
@@ -354,21 +386,29 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 
 void EnteiToolsDialog::displayBufferedCaption()
 {
-	if (!caption_buffer.isEmpty()) {
-		// Send buffered caption to OBS caption system
-		QByteArray utf8_text = caption_buffer.toUtf8();
-		obs_output_t *output = obs_frontend_get_streaming_output();
-		if (output) {
-			obs_output_output_caption_text2(output, utf8_text.constData(), 0.0);
-			obs_output_release(output);
-		}
-
-		caption_buffer.clear();
+	// Add defensive check in case timer fires after disconnect
+	if (!isConnected || caption_buffer.isEmpty()) {
+		return;
 	}
+
+	// Send buffered caption to OBS caption system
+	QByteArray utf8_text = caption_buffer.toUtf8();
+	obs_output_t *output = obs_frontend_get_streaming_output();
+	if (output) {
+		obs_output_output_caption_text2(output, utf8_text.constData(), 0.0);
+		obs_output_release(output);
+	}
+
+	caption_buffer.clear();
 }
 
 void EnteiToolsDialog::websocket_connect_callback(bool connected, void *user_data)
 {
+	if (!user_data) {
+		obs_log(LOG_WARNING, "WebSocket connect callback received null user_data");
+		return;
+	}
+
 	EnteiToolsDialog *dialog = static_cast<EnteiToolsDialog *>(user_data);
 	QMetaObject::invokeMethod(
 		dialog, [dialog, connected]() { dialog->onWebSocketConnected(connected); }, Qt::QueuedConnection);
@@ -376,6 +416,11 @@ void EnteiToolsDialog::websocket_connect_callback(bool connected, void *user_dat
 
 void EnteiToolsDialog::websocket_message_callback(const char *message, size_t len, void *user_data)
 {
+	if (!user_data || !message) {
+		obs_log(LOG_WARNING, "WebSocket message callback received null parameters");
+		return;
+	}
+
 	EnteiToolsDialog *dialog = static_cast<EnteiToolsDialog *>(user_data);
 
 	// Copy the message since it might not be valid after this function returns
@@ -390,6 +435,7 @@ static void entei_tools_menu_clicked(void *private_data)
 {
 	UNUSED_PARAMETER(private_data);
 
+	// Check if dialog is null or has been destroyed
 	if (!dialog) {
 		dialog = new EnteiToolsDialog();
 	}
