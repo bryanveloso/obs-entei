@@ -5,7 +5,6 @@
 #ifdef HAVE_WEBSOCKETPP
 
 #include <websocketpp/config/asio_no_tls_client.hpp>
-#include <websocketpp/config/asio_client.hpp>
 #include <websocketpp/client.hpp>
 #include <asio/io_context.hpp>
 
@@ -14,9 +13,8 @@
 #include <string>
 #include <mutex>
 
-typedef websocketpp::client<websocketpp::config::asio_client> client_tls;
 typedef websocketpp::client<websocketpp::config::asio_no_tls_client> client;
-typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
+typedef websocketpp::config::asio_no_tls_client::message_type::ptr message_ptr;
 
 struct websocket_client {
 	std::string url;
@@ -24,12 +22,10 @@ struct websocket_client {
 	std::string path;
 	int port;
 	bool connected;
-	bool ssl;
 	bool should_stop;
 
 	// WebSocket++ objects
 	std::unique_ptr<client> ws_client;
-	std::unique_ptr<client_tls> ws_client_tls;
 	websocketpp::connection_hdl connection_hdl;
 	std::unique_ptr<std::thread> worker_thread;
 	std::unique_ptr<asio::io_context> io_context;
@@ -43,35 +39,11 @@ struct websocket_client {
 	std::mutex callback_mutex;
 };
 
-static bool parse_url(const std::string &url, std::string &host, std::string &path, int &port, bool &ssl)
+static bool parse_url(const std::string &url, std::string &host, std::string &path, int &port)
 {
 	if (url.substr(0, 5) == "ws://") {
-		ssl = false;
 		port = 80;
 		size_t start = 5;
-		size_t slash_pos = url.find('/', start);
-		size_t colon_pos = url.find(':', start);
-
-		if (colon_pos != std::string::npos && (slash_pos == std::string::npos || colon_pos < slash_pos)) {
-			host = url.substr(start, colon_pos - start);
-			size_t port_end = (slash_pos != std::string::npos) ? slash_pos : url.length();
-			port = std::stoi(url.substr(colon_pos + 1, port_end - colon_pos - 1));
-		} else if (slash_pos != std::string::npos) {
-			host = url.substr(start, slash_pos - start);
-		} else {
-			host = url.substr(start);
-		}
-
-		if (slash_pos != std::string::npos) {
-			path = url.substr(slash_pos);
-		} else {
-			path = "/";
-		}
-		return true;
-	} else if (url.substr(0, 6) == "wss://") {
-		ssl = true;
-		port = 443;
-		size_t start = 6;
 		size_t slash_pos = url.find('/', start);
 		size_t colon_pos = url.find(':', start);
 
@@ -119,7 +91,7 @@ struct websocket_client *websocket_client_create(const char *url)
 	client->connect_callback = nullptr;
 	client->connect_user_data = nullptr;
 
-	if (!parse_url(client->url, client->host, client->path, client->port, client->ssl)) {
+	if (!parse_url(client->url, client->host, client->path, client->port)) {
 		obs_log(LOG_ERROR, "Failed to parse WebSocket URL: %s", url);
 		delete client;
 		return nullptr;
@@ -159,116 +131,57 @@ bool websocket_client_connect(struct websocket_client *client)
 	try {
 		client->io_context = std::make_unique<asio::io_context>();
 
-		if (client->ssl) {
-			client->ws_client_tls = std::make_unique<client_tls>();
-			client->ws_client_tls->clear_access_channels(websocketpp::log::alevel::all);
-			client->ws_client_tls->clear_error_channels(websocketpp::log::elevel::all);
-			client->ws_client_tls->init_asio(client->io_context.get());
+		client->ws_client = std::make_unique<client>();
+		client->ws_client->clear_access_channels(websocketpp::log::alevel::all);
+		client->ws_client->clear_error_channels(websocketpp::log::elevel::all);
+		client->ws_client->init_asio(client->io_context.get());
 
-			client->ws_client_tls->set_open_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_INFO, "WebSocket connection established (TLS)");
-				client->connected = true;
-				client->connection_hdl = hdl;
-				if (client->connect_callback) {
-					client->connect_callback(true, client->connect_user_data);
-				}
-			});
-
-			client->ws_client_tls->set_fail_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_ERROR, "WebSocket connection failed (TLS)");
-				client->connected = false;
-				if (client->connect_callback) {
-					client->connect_callback(false, client->connect_user_data);
-				}
-			});
-
-			client->ws_client_tls->set_close_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_INFO, "WebSocket connection closed (TLS)");
-				client->connected = false;
-				if (client->connect_callback) {
-					client->connect_callback(false, client->connect_user_data);
-				}
-			});
-
-			client->ws_client_tls->set_message_handler(
-				[client](websocketpp::connection_hdl hdl, message_ptr msg) {
-					std::lock_guard<std::mutex> lock(client->callback_mutex);
-					if (client->message_callback) {
-						const std::string &payload = msg->get_payload();
-						client->message_callback(payload.c_str(), payload.size(),
-									 client->message_user_data);
-					}
-				});
-
-			std::string uri = client->url;
-			websocketpp::lib::error_code ec;
-			auto con = client->ws_client_tls->get_connection(uri, ec);
-			if (ec) {
-				obs_log(LOG_ERROR, "Failed to create WebSocket connection: %s", ec.message().c_str());
-				return false;
+		client->ws_client->set_open_handler([client](websocketpp::connection_hdl hdl) {
+			std::lock_guard<std::mutex> lock(client->callback_mutex);
+			obs_log(LOG_INFO, "WebSocket connection established");
+			client->connected = true;
+			client->connection_hdl = hdl;
+			if (client->connect_callback) {
+				client->connect_callback(true, client->connect_user_data);
 			}
+		});
 
-			con->add_subprotocol("phoenix");
-			client->ws_client_tls->connect(con);
-
-		} else {
-			client->ws_client = std::make_unique<client>();
-			client->ws_client->clear_access_channels(websocketpp::log::alevel::all);
-			client->ws_client->clear_error_channels(websocketpp::log::elevel::all);
-			client->ws_client->init_asio(client->io_context.get());
-
-			client->ws_client->set_open_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_INFO, "WebSocket connection established");
-				client->connected = true;
-				client->connection_hdl = hdl;
-				if (client->connect_callback) {
-					client->connect_callback(true, client->connect_user_data);
-				}
-			});
-
-			client->ws_client->set_fail_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_ERROR, "WebSocket connection failed");
-				client->connected = false;
-				if (client->connect_callback) {
-					client->connect_callback(false, client->connect_user_data);
-				}
-			});
-
-			client->ws_client->set_close_handler([client](websocketpp::connection_hdl hdl) {
-				std::lock_guard<std::mutex> lock(client->callback_mutex);
-				obs_log(LOG_INFO, "WebSocket connection closed");
-				client->connected = false;
-				if (client->connect_callback) {
-					client->connect_callback(false, client->connect_user_data);
-				}
-			});
-
-			client->ws_client->set_message_handler(
-				[client](websocketpp::connection_hdl hdl, message_ptr msg) {
-					std::lock_guard<std::mutex> lock(client->callback_mutex);
-					if (client->message_callback) {
-						const std::string &payload = msg->get_payload();
-						client->message_callback(payload.c_str(), payload.size(),
-									 client->message_user_data);
-					}
-				});
-
-			std::string uri = client->url;
-			websocketpp::lib::error_code ec;
-			auto con = client->ws_client->get_connection(uri, ec);
-			if (ec) {
-				obs_log(LOG_ERROR, "Failed to create WebSocket connection: %s", ec.message().c_str());
-				return false;
+		client->ws_client->set_fail_handler([client](websocketpp::connection_hdl hdl) {
+			std::lock_guard<std::mutex> lock(client->callback_mutex);
+			obs_log(LOG_ERROR, "WebSocket connection failed");
+			client->connected = false;
+			if (client->connect_callback) {
+				client->connect_callback(false, client->connect_user_data);
 			}
+		});
 
-			con->add_subprotocol("phoenix");
-			client->ws_client->connect(con);
+		client->ws_client->set_close_handler([client](websocketpp::connection_hdl hdl) {
+			std::lock_guard<std::mutex> lock(client->callback_mutex);
+			obs_log(LOG_INFO, "WebSocket connection closed");
+			client->connected = false;
+			if (client->connect_callback) {
+				client->connect_callback(false, client->connect_user_data);
+			}
+		});
+
+		client->ws_client->set_message_handler([client](websocketpp::connection_hdl hdl, message_ptr msg) {
+			std::lock_guard<std::mutex> lock(client->callback_mutex);
+			if (client->message_callback) {
+				const std::string &payload = msg->get_payload();
+				client->message_callback(payload.c_str(), payload.size(), client->message_user_data);
+			}
+		});
+
+		std::string uri = client->url;
+		websocketpp::lib::error_code ec;
+		auto con = client->ws_client->get_connection(uri, ec);
+		if (ec) {
+			obs_log(LOG_ERROR, "Failed to create WebSocket connection: %s", ec.message().c_str());
+			return false;
 		}
+
+		con->add_subprotocol("phoenix");
+		client->ws_client->connect(con);
 
 		// Start worker thread
 		client->worker_thread = std::make_unique<std::thread>([client]() {
@@ -295,15 +208,10 @@ void websocket_client_disconnect(struct websocket_client *client)
 		return;
 
 	try {
-		if (client->connected) {
+		if (client->connected && client->ws_client) {
 			websocketpp::lib::error_code ec;
-			if (client->ssl && client->ws_client_tls) {
-				client->ws_client_tls->close(client->connection_hdl,
-							     websocketpp::close::status::going_away, "", ec);
-			} else if (client->ws_client) {
-				client->ws_client->close(client->connection_hdl, websocketpp::close::status::going_away,
-							 "", ec);
-			}
+			client->ws_client->close(client->connection_hdl, websocketpp::close::status::going_away, "",
+						 ec);
 		}
 
 		client->connected = false;
@@ -333,10 +241,7 @@ void websocket_client_send(struct websocket_client *client, const char *message)
 
 	try {
 		websocketpp::lib::error_code ec;
-		if (client->ssl && client->ws_client_tls) {
-			client->ws_client_tls->send(client->connection_hdl, message, websocketpp::frame::opcode::text,
-						    ec);
-		} else if (client->ws_client) {
+		if (client->ws_client) {
 			client->ws_client->send(client->connection_hdl, message, websocketpp::frame::opcode::text, ec);
 		}
 
