@@ -40,7 +40,7 @@
             }
         },
         "asio": {
-            "version": "1-28-0",
+            "version": "asio-1-28-0",
             "baseUrl": "https://github.com/chriskohlhoff/asio/archive/refs/tags",
             "label": "Asio Headers",
             "hashes": {

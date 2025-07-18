@@ -170,7 +170,7 @@ function(_check_dependencies)
       continue()
     endif()
 
-    if(dependency STREQUAL obs-studio)
+    if(dependency STREQUAL obs-studio OR dependency STREQUAL websocketpp OR dependency STREQUAL asio)
       set(url ${url}/${file})
     else()
       set(url ${url}/${version}/${file})
