@@ -1,4 +1,5 @@
 #include "websocket-client.h"
+#include <obs-module.h>
 #include "plugin-support.h"
 #include <stdlib.h>
 #include <string.h>
