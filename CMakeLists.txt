@@ -28,6 +28,11 @@ if(NOT Websocketpp_FOUND)
   FetchContent_MakeAvailable(websocketpp)
   add_library(Websocketpp::Websocketpp INTERFACE IMPORTED)
   target_include_directories(Websocketpp::Websocketpp INTERFACE ${websocketpp_SOURCE_DIR})
+  # Disable warnings for WebSocket++ headers
+  target_compile_options(
+    Websocketpp::Websocketpp
+    INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>
+  )
 endif()
 # Try to find Asio, fallback to FetchContent if not found
 find_package(Asio QUIET)
@@ -37,6 +42,11 @@ if(NOT Asio_FOUND)
   FetchContent_MakeAvailable(asio)
   add_library(Asio::Asio INTERFACE IMPORTED)
   target_include_directories(Asio::Asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
+  # Disable warnings for Asio headers
+  target_compile_options(
+    Asio::Asio
+    INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>
+  )
 endif()
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
