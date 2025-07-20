@@ -44,7 +44,6 @@ private:
 	void sendHeartbeat();
 	void joinChannel(const QString &channel);
 	void processPhoenixMessage(const char *json);
-	void displayBufferedCaption();
 
 	static void websocket_connect_callback(bool connected, void *user_data);
 	static void websocket_message_callback(const char *message, size_t len, void *user_data);
@@ -68,9 +67,6 @@ private:
 	// Heartbeat timer for Phoenix connection
 	QTimer *heartbeatTimer;
 
-	// Caption buffering
-	QString caption_buffer;
-	QTimer *caption_display_timer;
 };
 
 static EnteiToolsDialog *dialog = nullptr;
@@ -81,8 +77,7 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	  isConnected(false),
 	  message_ref_counter(0),
 	  channel_joined(false),
-	  heartbeatTimer(nullptr),
-	  caption_display_timer(nullptr)
+	  heartbeatTimer(nullptr)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
@@ -97,11 +92,6 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	heartbeatTimer->setInterval(30000); // 30 seconds
 	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendHeartbeat);
 
-	// Setup caption display timer for buffering captions
-	caption_display_timer = new QTimer(this);
-	caption_display_timer->setSingleShot(true);
-	caption_display_timer->setInterval(2000); // 2 second delay for buffering
-	connect(caption_display_timer, &QTimer::timeout, this, &EnteiToolsDialog::displayBufferedCaption);
 
 	// Clear static pointer when this dialog is destroyed
 	connect(this, &QObject::destroyed, []() { dialog = nullptr; });
@@ -114,9 +104,6 @@ EnteiToolsDialog::~EnteiToolsDialog()
 	// Stop timers first to prevent callbacks after destruction starts
 	if (heartbeatTimer) {
 		heartbeatTimer->stop();
-	}
-	if (caption_display_timer) {
-		caption_display_timer->stop();
 	}
 
 	if (client) {
@@ -233,9 +220,6 @@ void EnteiToolsDialog::onDisconnectClicked()
 	// Stop timers
 	if (heartbeatTimer) {
 		heartbeatTimer->stop();
-	}
-	if (caption_display_timer) {
-		caption_display_timer->stop();
 	}
 }
 
@@ -372,9 +356,13 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 					if (caption_text) {
 						logTextEdit->append(QString("Caption: %1").arg(caption_text));
 
-						// Buffer caption text for display
-						caption_buffer = QString::fromUtf8(caption_text);
-						caption_display_timer->start(); // Restart timer to delay display
+						// Send caption immediately to OBS
+						QByteArray utf8_text = QString::fromUtf8(caption_text).toUtf8();
+						obs_output_t *streaming_output = obs_frontend_get_streaming_output();
+						if (streaming_output) {
+							obs_output_output_caption_text2(streaming_output, utf8_text.constData(), 3.0);
+							obs_output_release(streaming_output);
+						}
 					}
 				}
 			}
@@ -384,23 +372,6 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 	}
 }
 
-void EnteiToolsDialog::displayBufferedCaption()
-{
-	// Add defensive check in case timer fires after disconnect
-	if (!isConnected || caption_buffer.isEmpty()) {
-		return;
-	}
-
-	// Send buffered caption to OBS caption system
-	QByteArray utf8_text = caption_buffer.toUtf8();
-	obs_output_t *output = obs_frontend_get_streaming_output();
-	if (output) {
-		obs_output_output_caption_text2(output, utf8_text.constData(), 0.0);
-		obs_output_release(output);
-	}
-
-	caption_buffer.clear();
-}
 
 void EnteiToolsDialog::websocket_connect_callback(bool connected, void *user_data)
 {
