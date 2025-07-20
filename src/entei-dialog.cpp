@@ -17,6 +17,8 @@
 #include <QtWidgets/QCheckBox>
 #include <QtCore/QDateTime>
 #include <QtGui/QCloseEvent>
+#include <chrono>
+#include <functional>
 
 EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	: QDialog(parent),
