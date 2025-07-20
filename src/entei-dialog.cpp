@@ -243,7 +243,7 @@ void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
 {
 	if (enabled) {
 		logTextEdit->append("Auto-connect enabled - will connect when streaming starts");
-		
+
 		// If already streaming, connect immediately
 		if (obs_frontend_streaming_active()) {
 			if (!isConnected) {
@@ -253,7 +253,7 @@ void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
 	} else {
 		logTextEdit->append("Auto-connect disabled");
 	}
-	
+
 	// Update status to reflect auto-connect state
 	updateConnectionStatus(isConnected);
 }
@@ -261,7 +261,7 @@ void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
 void EnteiToolsDialog::updateConnectionStatus(bool connected)
 {
 	isConnected = connected;
-	
+
 	if (connected) {
 		statusLabel->setText("Connected");
 		statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
@@ -360,7 +360,7 @@ void EnteiToolsDialog::joinChannel(const QString &channel)
 	cJSON *payload = cJSON_CreateObject();
 
 	char *join_json = phoenix_create_join_json(join_ref.toUtf8().constData(), msg_ref.toUtf8().constData(),
-					   channel.toUtf8().constData(), payload);
+						   channel.toUtf8().constData(), payload);
 
 	if (join_json) {
 		current_channel = channel;
@@ -405,7 +405,8 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 						QByteArray utf8_text = QString::fromUtf8(caption_text).toUtf8();
 						obs_output_t *streaming_output = obs_frontend_get_streaming_output();
 						if (streaming_output) {
-							obs_output_output_caption_text2(streaming_output, utf8_text.constData(), 3.0);
+							obs_output_output_caption_text2(streaming_output,
+											utf8_text.constData(), 3.0);
 							obs_output_release(streaming_output);
 						}
 					}
@@ -461,18 +462,24 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 	switch (event) {
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
 		if (!dialog->isConnected) {
-			QMetaObject::invokeMethod(dialog, [dialog]() {
-				dialog->logTextEdit->append("Stream started - auto-connecting...");
-				dialog->onConnectClicked();
-			}, Qt::QueuedConnection);
+			QMetaObject::invokeMethod(
+				dialog,
+				[dialog]() {
+					dialog->logTextEdit->append("Stream started - auto-connecting...");
+					dialog->onConnectClicked();
+				},
+				Qt::QueuedConnection);
 		}
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
 		if (dialog->isConnected) {
-			QMetaObject::invokeMethod(dialog, [dialog]() {
-				dialog->logTextEdit->append("Stream stopped - auto-disconnecting...");
-				dialog->onDisconnectClicked();
-			}, Qt::QueuedConnection);
+			QMetaObject::invokeMethod(
+				dialog,
+				[dialog]() {
+					dialog->logTextEdit->append("Stream stopped - auto-disconnecting...");
+					dialog->onDisconnectClicked();
+				},
+				Qt::QueuedConnection);
 		}
 		break;
 	default:

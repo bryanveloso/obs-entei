@@ -3,6 +3,7 @@
 #include <QtWidgets/QDialog>
 #include <QtCore/QTimer>
 #include <QtCore/QString>
+#include <obs-frontend-api.h>
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
