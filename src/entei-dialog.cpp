@@ -488,5 +488,3 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 		break;
 	}
 }
-
-#include "entei-dialog.moc"

@@ -37,11 +37,7 @@ if(NOT Websocketpp_FOUND OR NOT Asio_FOUND)
   endif()
 
   if(NOT Websocketpp_FOUND)
-    FetchContent_Declare(
-      websocketpp
-      GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
-      GIT_TAG 0.8.2
-    )
+    FetchContent_Declare(websocketpp GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git GIT_TAG 0.8.2)
   endif()
 
   # Handle Asio first
@@ -80,19 +76,16 @@ endif()
 if(Websocketpp_FOUND)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Websocketpp::Websocketpp)
 else()
-  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${websocketpp_SOURCE_DIR})
+  target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE ${websocketpp_SOURCE_DIR})
 endif()
 
 if(Asio_FOUND)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Asio::Asio)
 else()
-  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${asio_SOURCE_DIR}/asio/include)
+  target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE ${asio_SOURCE_DIR}/asio/include)
 endif()
 
-target_link_libraries(
-  ${CMAKE_PROJECT_NAME}
-  PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto
-)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ASIO_STANDALONE)
 
 # Windows-specific settings for WebSocket++
