@@ -24,45 +24,74 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 find_package(libobs REQUIRED)
 find_package(OpenSSL REQUIRED)
-# Try to find Websocketpp, fallback to FetchContent if target not available
-find_package(Websocketpp 0.8.2 QUIET)
-if(NOT TARGET Websocketpp::Websocketpp)
+# Try to find WebSocket++ and Asio like obs-websocket does
+find_package(Websocketpp 0.8 QUIET)
+find_package(Asio 1.12.1 QUIET)
+
+# If not found, use FetchContent as fallback
+if(NOT Websocketpp_FOUND OR NOT Asio_FOUND)
   include(FetchContent)
-  FetchContent_Declare(websocketpp GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git GIT_TAG 0.8.2)
-  # Populate content but don't add to install
-  FetchContent_Populate(websocketpp)
-  if(NOT websocketpp_POPULATED)
-    FetchContent_Populate(websocketpp)
+
+  if(NOT Asio_FOUND)
+    FetchContent_Declare(asio GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git GIT_TAG asio-1-12-1)
   endif()
-  add_library(Websocketpp::Websocketpp INTERFACE IMPORTED)
-  target_include_directories(Websocketpp::Websocketpp INTERFACE ${websocketpp_SOURCE_DIR})
-  # Disable warnings for WebSocket++ headers
-  target_compile_options(
-    Websocketpp::Websocketpp
-    INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>
-  )
-endif()
-# Try to find Asio, fallback to FetchContent if target not available
-find_package(Asio QUIET)
-if(NOT TARGET Asio::Asio)
-  include(FetchContent)
-  FetchContent_Declare(asio GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git GIT_TAG asio-1-28-0)
-  # Populate content but don't add to install
-  FetchContent_Populate(asio)
-  if(NOT asio_POPULATED)
-    FetchContent_Populate(asio)
+
+  if(NOT Websocketpp_FOUND)
+    FetchContent_Declare(
+      websocketpp
+      GIT_REPOSITORY https://github.com/zaphoyd/websocketpp.git
+      GIT_TAG 0.8.2
+    )
   endif()
-  add_library(Asio::Asio INTERFACE IMPORTED)
-  target_include_directories(Asio::Asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
-  # Disable warnings for Asio headers
-  target_compile_options(
-    Asio::Asio
-    INTERFACE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>
-  )
+
+  # Handle Asio first
+  if(NOT Asio_FOUND)
+    FetchContent_MakeAvailable(asio)
+  endif()
+
+  # Handle WebSocket++ with patching
+  if(NOT Websocketpp_FOUND)
+    FetchContent_GetProperties(websocketpp)
+    if(NOT websocketpp_POPULATED)
+      # Allow deprecated FetchContent_Populate for manual patching
+      cmake_policy(PUSH)
+      cmake_policy(SET CMP0169 OLD)
+      FetchContent_Populate(websocketpp)
+      cmake_policy(POP)
+
+      # Patch the CMake minimum version
+      file(READ ${websocketpp_SOURCE_DIR}/CMakeLists.txt WEBSOCKETPP_CMAKE)
+      string(
+        REPLACE
+        "cmake_minimum_required (VERSION 2.6)"
+        "cmake_minimum_required (VERSION 3.5)"
+        WEBSOCKETPP_CMAKE
+        "${WEBSOCKETPP_CMAKE}"
+      )
+      file(WRITE ${websocketpp_SOURCE_DIR}/CMakeLists.txt "${WEBSOCKETPP_CMAKE}")
+
+      # WebSocket++ is header-only, we don't need to build or install anything
+      # Just make the headers available
+      set(websocketpp_POPULATED TRUE CACHE BOOL "WebSocket++ populated" FORCE)
+    endif()
+  endif()
 endif()
+# Add include directories based on how deps were found
+if(Websocketpp_FOUND)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Websocketpp::Websocketpp)
+else()
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${websocketpp_SOURCE_DIR})
+endif()
+
+if(Asio_FOUND)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Asio::Asio)
+else()
+  target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${asio_SOURCE_DIR}/asio/include)
+endif()
+
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto Websocketpp::Websocketpp Asio::Asio
+  PRIVATE OBS::libobs OpenSSL::SSL OpenSSL::Crypto
 )
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ASIO_STANDALONE)
 

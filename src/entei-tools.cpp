@@ -38,3 +38,4 @@ void unregister_entei_tools_menu(void)
 
 	obs_log(LOG_INFO, "Entei Tools menu unregistered");
 }
+

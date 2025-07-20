@@ -72,3 +72,4 @@ private:
 	// Heartbeat timer for Phoenix connection
 	QTimer *heartbeatTimer;
 };
+
