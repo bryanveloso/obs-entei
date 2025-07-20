@@ -13,6 +13,7 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QGroupBox>
+#include <QtWidgets/QCheckBox>
 #include <QtCore/QDateTime>
 #include <QtCore/QTimer>
 #include <QtGui/QCloseEvent>
@@ -31,6 +32,7 @@ private slots:
 	void onConnectClicked();
 	void onDisconnectClicked();
 	void onWebSocketUrlChanged();
+	void onAutoConnectToggled(bool enabled);
 
 private:
 	void setupUI();
@@ -47,6 +49,7 @@ private:
 
 	static void websocket_connect_callback(bool connected, void *user_data);
 	static void websocket_message_callback(const char *message, size_t len, void *user_data);
+	static void obs_frontend_event_callback(enum obs_frontend_event event, void *private_data);
 
 	QLineEdit *websocketUrlEdit;
 	QLineEdit *channelEdit;
@@ -54,6 +57,7 @@ private:
 	QPushButton *disconnectButton;
 	QLabel *statusLabel;
 	QTextEdit *logTextEdit;
+	QCheckBox *autoConnectCheckBox;
 
 	struct websocket_client *client;
 	bool isConnected;
@@ -96,6 +100,9 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	// Clear static pointer when this dialog is destroyed
 	connect(this, &QObject::destroyed, []() { dialog = nullptr; });
 
+	// Register for OBS frontend events for auto-connect
+	obs_frontend_add_event_callback(obs_frontend_event_callback, this);
+
 	setupUI();
 }
 
@@ -105,6 +112,9 @@ EnteiToolsDialog::~EnteiToolsDialog()
 	if (heartbeatTimer) {
 		heartbeatTimer->stop();
 	}
+
+	// Unregister from OBS frontend events
+	obs_frontend_remove_event_callback(obs_frontend_event_callback, this);
 
 	if (client) {
 		websocket_client_disconnect(client);
@@ -153,6 +163,10 @@ void EnteiToolsDialog::setupUI()
 	buttonLayout->addStretch();
 	connectionLayout->addLayout(buttonLayout);
 
+	// Auto-connect checkbox
+	autoConnectCheckBox = new QCheckBox("Auto-connect when streaming starts");
+	connectionLayout->addWidget(autoConnectCheckBox);
+
 	// Status
 	QHBoxLayout *statusLayout = new QHBoxLayout();
 	statusLayout->addWidget(new QLabel("Status:"));
@@ -178,6 +192,7 @@ void EnteiToolsDialog::setupUI()
 	connect(connectButton, &QPushButton::clicked, this, &EnteiToolsDialog::onConnectClicked);
 	connect(disconnectButton, &QPushButton::clicked, this, &EnteiToolsDialog::onDisconnectClicked);
 	connect(websocketUrlEdit, &QLineEdit::textChanged, this, &EnteiToolsDialog::onWebSocketUrlChanged);
+	connect(autoConnectCheckBox, &QCheckBox::toggled, this, &EnteiToolsDialog::onAutoConnectToggled);
 }
 
 void EnteiToolsDialog::onConnectClicked()
@@ -227,6 +242,22 @@ void EnteiToolsDialog::onWebSocketUrlChanged()
 {
 	// Enable connect button only if we have a URL and aren't connected
 	connectButton->setEnabled(!websocketUrlEdit->text().isEmpty() && !isConnected);
+}
+
+void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
+{
+	if (enabled) {
+		logTextEdit->append("Auto-connect enabled - will connect when streaming starts");
+		
+		// If already streaming, connect immediately
+		if (obs_frontend_streaming_active()) {
+			if (!isConnected) {
+				onConnectClicked();
+			}
+		}
+	} else {
+		logTextEdit->append("Auto-connect disabled");
+	}
 }
 
 void EnteiToolsDialog::updateConnectionStatus(bool connected)
@@ -400,6 +431,40 @@ void EnteiToolsDialog::websocket_message_callback(const char *message, size_t le
 	QMetaObject::invokeMethod(
 		dialog, [dialog, msg]() { dialog->onWebSocketMessage(msg.toUtf8().constData(), msg.length()); },
 		Qt::QueuedConnection);
+}
+
+void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event, void *private_data)
+{
+	EnteiToolsDialog *dialog = static_cast<EnteiToolsDialog *>(private_data);
+	if (!dialog || !dialog->autoConnectCheckBox) {
+		return;
+	}
+
+	// Only handle events if auto-connect is enabled
+	if (!dialog->autoConnectCheckBox->isChecked()) {
+		return;
+	}
+
+	switch (event) {
+	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
+		if (!dialog->isConnected) {
+			QMetaObject::invokeMethod(dialog, [dialog]() {
+				dialog->logTextEdit->append("Stream started - auto-connecting...");
+				dialog->onConnectClicked();
+			}, Qt::QueuedConnection);
+		}
+		break;
+	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
+		if (dialog->isConnected) {
+			QMetaObject::invokeMethod(dialog, [dialog]() {
+				dialog->logTextEdit->append("Stream stopped - auto-disconnecting...");
+				dialog->onDisconnectClicked();
+			}, Qt::QueuedConnection);
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 static void entei_tools_menu_clicked(void *private_data)
