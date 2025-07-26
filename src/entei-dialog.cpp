@@ -30,8 +30,8 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
-	setFixedSize(450, 400);
-	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+	setMinimumSize(500, 450);
+	resize(550, 500);
 
 	// Generate a unique join reference for this session
 	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -79,26 +79,32 @@ void EnteiToolsDialog::closeEvent(QCloseEvent *event)
 void EnteiToolsDialog::setupUI()
 {
 	QVBoxLayout *mainLayout = new QVBoxLayout(this);
+	mainLayout->setContentsMargins(10, 10, 10, 10);
+	mainLayout->setSpacing(10);
 
 	// Connection Settings Group
 	QGroupBox *connectionGroup = new QGroupBox("WebSocket Connection", this);
 	QGridLayout *connectionLayout = new QGridLayout(connectionGroup);
+	connectionLayout->setColumnStretch(1, 1); // Make the input column stretch
 
-	connectionLayout->addWidget(new QLabel("URL:", this), 0, 0);
+	QLabel *urlLabel = new QLabel("URL:", this);
+	urlLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	connectionLayout->addWidget(urlLabel, 0, 0);
+
 	websocketUrlEdit = new QLineEdit(this);
 	websocketUrlEdit->setPlaceholderText("ws://saya:7175/socket/websocket?vsn=2.0.0");
-	connectionLayout->addWidget(websocketUrlEdit, 0, 1, 1, 2);
+	connectionLayout->addWidget(websocketUrlEdit, 0, 1);
 
-	QPushButton *testButton = new QPushButton("Test Connection", this);
-	connectionLayout->addWidget(testButton, 0, 3);
+	QLabel *channelLabel = new QLabel("Channel:", this);
+	channelLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+	connectionLayout->addWidget(channelLabel, 1, 0);
 
-	connectionLayout->addWidget(new QLabel("Channel:", this), 1, 0);
 	channelEdit = new QLineEdit(this);
 	channelEdit->setPlaceholderText("transcription:live");
-	connectionLayout->addWidget(channelEdit, 1, 1, 1, 3);
+	connectionLayout->addWidget(channelEdit, 1, 1);
 
 	autoConnectCheckBox = new QCheckBox("Auto-connect when streaming starts", this);
-	connectionLayout->addWidget(autoConnectCheckBox, 2, 0, 1, 4);
+	connectionLayout->addWidget(autoConnectCheckBox, 2, 0, 1, 2);
 
 	mainLayout->addWidget(connectionGroup);
 
@@ -135,7 +141,8 @@ void EnteiToolsDialog::setupUI()
 
 	logTextEdit = new QTextEdit(this);
 	logTextEdit->setReadOnly(true);
-	logTextEdit->setMaximumHeight(100);
+	logTextEdit->setMinimumHeight(100);
+	logTextEdit->setMaximumHeight(150);
 	logLayout->addWidget(logTextEdit);
 
 	mainLayout->addWidget(logGroup);
