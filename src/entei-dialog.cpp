@@ -67,6 +67,11 @@ EnteiToolsDialog::~EnteiToolsDialog()
 
 void EnteiToolsDialog::closeEvent(QCloseEvent *event)
 {
+	// Disconnect first to avoid any signals during shutdown
+	if (isConnected && client) {
+		disconnect();
+	}
+
 	saveSettings();
 	QDialog::closeEvent(event);
 }
@@ -155,6 +160,11 @@ void EnteiToolsDialog::loadSettings()
 	config_t *config = obs_frontend_get_profile_config();
 #endif
 
+	if (!config) {
+		obs_log(LOG_WARNING, "Failed to get OBS config for loading settings");
+		return;
+	}
+
 	const char *url = config_get_string(config, "EnteiCaptionProvider", "WebSocketUrl");
 	if (url && strlen(url) > 0) {
 		websocketUrlEdit->setText(url);
@@ -177,6 +187,17 @@ void EnteiToolsDialog::saveSettings()
 #else
 	config_t *config = obs_frontend_get_profile_config();
 #endif
+
+	if (!config) {
+		obs_log(LOG_WARNING, "Failed to get OBS config for saving settings");
+		return;
+	}
+
+	// Ensure UI elements exist before accessing them
+	if (!websocketUrlEdit || !channelEdit || !autoConnectCheckBox) {
+		obs_log(LOG_WARNING, "UI elements not available for saving settings");
+		return;
+	}
 
 	std::string urlStdString = websocketUrlEdit->text().toStdString();
 	std::string channelStdString = channelEdit->text().toStdString();
