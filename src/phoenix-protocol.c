@@ -4,27 +4,56 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void extract_string_field(cJSON *item, char **dest)
+{
+	if (item && cJSON_IsString(item)) {
+		const char *str = cJSON_GetStringValue(item);
+		if (str) {
+			*dest = bstrdup(str);
+		}
+	}
+}
+
+static void extract_payload_field(cJSON *item, cJSON **dest)
+{
+	if (item) {
+		*dest = cJSON_Duplicate(item, 1);
+	}
+}
+
 char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const char *topic, cJSON *payload)
 {
-	// Phoenix V2 array format: [join_ref, ref, topic, event, payload]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix 1.7 object format
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 
-	cJSON_AddItemToArray(array, cJSON_CreateString(join_ref ? join_ref : msg_ref));
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_JOIN));
-	
-	if (payload) {
-		cJSON_AddItemToArray(array, cJSON_Duplicate(payload, 1));
+	// Add join_ref (can be null)
+	if (join_ref) {
+		cJSON_AddStringToObject(object, "join_ref", join_ref);
 	} else {
-		cJSON_AddItemToArray(array, cJSON_CreateObject());
+		cJSON_AddNullToObject(object, "join_ref");
 	}
 
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	// Add ref
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
+
+	// Add topic
+	cJSON_AddStringToObject(object, "topic", topic ? topic : "");
+
+	// Add event
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_JOIN);
+
+	// Add payload
+	if (payload) {
+		cJSON_AddItemToObject(object, "payload", cJSON_Duplicate(payload, 1));
+	} else {
+		cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
+	}
+
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -38,20 +67,29 @@ char *phoenix_create_join_json(const char *join_ref, const char *msg_ref, const 
 
 char *phoenix_create_leave_json(const char *msg_ref, const char *topic)
 {
-	// Phoenix V2 array format: [join_ref, ref, topic, event, payload]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix 1.7 object format
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 
-	cJSON_AddItemToArray(array, cJSON_CreateNull()); // join_ref not used for leave
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(topic ? topic : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_LEAVE));
-	cJSON_AddItemToArray(array, cJSON_CreateObject());
+	// Add join_ref (null for leave)
+	cJSON_AddNullToObject(object, "join_ref");
 
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	// Add ref
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
+
+	// Add topic
+	cJSON_AddStringToObject(object, "topic", topic ? topic : "");
+
+	// Add event
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_LEAVE);
+
+	// Add payload
+	cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
+
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -65,20 +103,29 @@ char *phoenix_create_leave_json(const char *msg_ref, const char *topic)
 
 char *phoenix_create_heartbeat_json(const char *msg_ref)
 {
-	// Phoenix V2 array format: [join_ref, ref, topic, event, payload]
-	cJSON *array = cJSON_CreateArray();
-	if (!array) {
+	// Phoenix 1.7 object format
+	cJSON *object = cJSON_CreateObject();
+	if (!object) {
 		return NULL;
 	}
 	
-	cJSON_AddItemToArray(array, cJSON_CreateNull()); // join_ref not used for heartbeat
-	cJSON_AddItemToArray(array, cJSON_CreateString(msg_ref ? msg_ref : ""));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_TOPIC_PHOENIX));
-	cJSON_AddItemToArray(array, cJSON_CreateString(PHOENIX_EVENT_HEARTBEAT));
-	cJSON_AddItemToArray(array, cJSON_CreateObject());
+	// Add join_ref (null for heartbeat)
+	cJSON_AddNullToObject(object, "join_ref");
+
+	// Add ref
+	cJSON_AddStringToObject(object, "ref", msg_ref ? msg_ref : "");
+
+	// Add topic
+	cJSON_AddStringToObject(object, "topic", PHOENIX_TOPIC_PHOENIX);
+
+	// Add event
+	cJSON_AddStringToObject(object, "event", PHOENIX_EVENT_HEARTBEAT);
+
+	// Add payload
+	cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
 	
-	char *json_string = cJSON_PrintUnformatted(array);
-	cJSON_Delete(array);
+	char *json_string = cJSON_PrintUnformatted(object);
+	cJSON_Delete(object);
 
 	// Convert to OBS memory management
 	if (json_string) {
@@ -98,61 +145,47 @@ bool phoenix_parse_message(const char *json, phoenix_message_t *message)
 
 	memset(message, 0, sizeof(phoenix_message_t));
 
-	cJSON *array = cJSON_Parse(json);
-	if (!array || !cJSON_IsArray(array)) {
+	cJSON *root = cJSON_Parse(json);
+	if (!root) {
 		return false;
 	}
 
-	// Parse array format: [join_ref, ref, topic, event, payload]
-	if (cJSON_GetArraySize(array) < 5) {
-		cJSON_Delete(array);
+	// Try to parse as object format first (Phoenix 1.7)
+	if (cJSON_IsObject(root)) {
+		// Parse object format: {"join_ref": ..., "ref": ..., "topic": ..., "event": ..., "payload": ...}
+		extract_string_field(cJSON_GetObjectItem(root, "join_ref"), &message->join_ref);
+		extract_string_field(cJSON_GetObjectItem(root, "ref"), &message->msg_ref);
+		extract_string_field(cJSON_GetObjectItem(root, "topic"), &message->topic);
+		extract_string_field(cJSON_GetObjectItem(root, "event"), &message->event);
+		extract_payload_field(cJSON_GetObjectItem(root, "payload"), &message->payload);
+
+		// Validate that essential fields were found
+		if (!message->event || !message->topic || !message->msg_ref) {
+			cJSON_Delete(root);
+			phoenix_message_free(message);
+			memset(message, 0, sizeof(phoenix_message_t));
+			return false;
+		}
+	}
+	// Fall back to array format for backward compatibility
+	else if (cJSON_IsArray(root)) {
+		// Parse array format: [join_ref, ref, topic, event, payload]
+		if (cJSON_GetArraySize(root) < 5) {
+			cJSON_Delete(root);
+			return false;
+		}
+
+		extract_string_field(cJSON_GetArrayItem(root, 0), &message->join_ref);
+		extract_string_field(cJSON_GetArrayItem(root, 1), &message->msg_ref);
+		extract_string_field(cJSON_GetArrayItem(root, 2), &message->topic);
+		extract_string_field(cJSON_GetArrayItem(root, 3), &message->event);
+		extract_payload_field(cJSON_GetArrayItem(root, 4), &message->payload);
+	} else {
+		cJSON_Delete(root);
 		return false;
 	}
 
-	cJSON *join_ref_item = cJSON_GetArrayItem(array, 0);
-	cJSON *ref_item = cJSON_GetArrayItem(array, 1);
-	cJSON *topic_item = cJSON_GetArrayItem(array, 2);
-	cJSON *event_item = cJSON_GetArrayItem(array, 3);
-	cJSON *payload_item = cJSON_GetArrayItem(array, 4);
-
-	// Extract join_ref
-	if (join_ref_item && cJSON_IsString(join_ref_item)) {
-		const char *str = cJSON_GetStringValue(join_ref_item);
-		if (str) {
-			message->join_ref = bstrdup(str);
-		}
-	}
-
-	// Extract ref (used as msg_ref)
-	if (ref_item && cJSON_IsString(ref_item)) {
-		const char *str = cJSON_GetStringValue(ref_item);
-		if (str) {
-			message->msg_ref = bstrdup(str);
-		}
-	}
-
-	// Extract topic
-	if (topic_item && cJSON_IsString(topic_item)) {
-		const char *str = cJSON_GetStringValue(topic_item);
-		if (str) {
-			message->topic = bstrdup(str);
-		}
-	}
-
-	// Extract event
-	if (event_item && cJSON_IsString(event_item)) {
-		const char *str = cJSON_GetStringValue(event_item);
-		if (str) {
-			message->event = bstrdup(str);
-		}
-	}
-
-	// Extract payload
-	if (payload_item) {
-		message->payload = cJSON_Duplicate(payload_item, 1);
-	}
-
-	cJSON_Delete(array);
+	cJSON_Delete(root);
 	return true;
 }
 

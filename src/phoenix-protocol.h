@@ -16,7 +16,7 @@ extern "C" {
 // Phoenix topics
 #define PHOENIX_TOPIC_PHOENIX "phoenix"
 
-// Phoenix message structure: [join_ref, msg_ref, topic, event, payload]
+// Phoenix message structure (1.7+): {"join_ref": ..., "ref": ..., "topic": ..., "event": ..., "payload": ...}
 typedef struct {
 	char *join_ref;
 	char *msg_ref;
@@ -38,6 +38,14 @@ bool phoenix_is_heartbeat_reply(const phoenix_message_t *message);
 bool phoenix_is_join_reply(const phoenix_message_t *message);
 
 const char *phoenix_get_reply_status(const phoenix_message_t *message);
+
+/**
+ * Gets the "response" object from a reply message payload.
+ *
+ * @param message The parsed Phoenix message.
+ * @return A duplicated cJSON object that the caller MUST free with cJSON_Delete,
+ *         or NULL if not a valid reply or if the response is missing.
+ */
 cJSON *phoenix_get_reply_response(const phoenix_message_t *message);
 
 #ifdef __cplusplus
