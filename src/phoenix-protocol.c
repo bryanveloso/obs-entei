@@ -108,7 +108,7 @@ char *phoenix_create_heartbeat_json(const char *msg_ref)
 	if (!object) {
 		return NULL;
 	}
-	
+
 	// Add join_ref (null for heartbeat)
 	cJSON_AddNullToObject(object, "join_ref");
 
@@ -123,7 +123,7 @@ char *phoenix_create_heartbeat_json(const char *msg_ref)
 
 	// Add payload
 	cJSON_AddItemToObject(object, "payload", cJSON_CreateObject());
-	
+
 	char *json_string = cJSON_PrintUnformatted(object);
 	cJSON_Delete(object);
 
