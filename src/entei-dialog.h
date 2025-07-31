@@ -30,7 +30,6 @@ private slots:
 	void onConnectClicked();
 	void onDisconnectClicked();
 	void onWebSocketUrlChanged();
-	void onChannelChanged();
 	void onAutoConnectToggled(bool enabled);
 	void onCaptionTimer();
 
@@ -40,7 +39,7 @@ private:
 	void saveSettings();
 	void updateConnectionStatus(bool connected);
 	void onWebSocketConnected(bool connected);
-	void onWebSocketMessage(const char *message, size_t len);
+	void onWebSocketMessage(const QString &message);
 
 	// Phoenix protocol helpers
 	QString getNextMessageRef();

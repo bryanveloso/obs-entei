@@ -32,8 +32,8 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
-	setMinimumSize(500, 450);
-	resize(550, 500);
+	setMinimumSize(400, 350);
+	// Don't set fixed size - will be restored from settings
 
 	// Generate a unique join reference for this session
 	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -113,7 +113,7 @@ void EnteiToolsDialog::setupUI()
 	channelEdit->setPlaceholderText("transcription:live");
 	connectionLayout->addWidget(channelEdit, 1, 1);
 
-	autoConnectCheckBox = new QCheckBox("Auto-connect when streaming starts", this);
+	autoConnectCheckBox = new QCheckBox("Auto-start captions when streaming begins", this);
 	connectionLayout->addWidget(autoConnectCheckBox, 2, 0, 1, 2);
 
 	mainLayout->addWidget(connectionGroup);
@@ -131,12 +131,13 @@ void EnteiToolsDialog::setupUI()
 	// Control Buttons
 	QHBoxLayout *buttonLayout = new QHBoxLayout();
 
-	connectButton = new QPushButton("Start Connection", this);
+	connectButton = new QPushButton("Start Captions", this);
 	connectButton->setEnabled(false);
 	buttonLayout->addWidget(connectButton);
 
-	disconnectButton = new QPushButton("Stop Connection", this);
+	disconnectButton = new QPushButton("Stop Captions", this);
 	disconnectButton->setEnabled(false);
+	disconnectButton->setVisible(false); // Hide by default
 	buttonLayout->addWidget(disconnectButton);
 
 	QPushButton *closeButton = new QPushButton("Close", this);
@@ -161,7 +162,7 @@ void EnteiToolsDialog::setupUI()
 	connect(connectButton, &QPushButton::clicked, this, &EnteiToolsDialog::onConnectClicked);
 	connect(disconnectButton, &QPushButton::clicked, this, &EnteiToolsDialog::onDisconnectClicked);
 	connect(websocketUrlEdit, &QLineEdit::textChanged, this, &EnteiToolsDialog::onWebSocketUrlChanged);
-	connect(channelEdit, &QLineEdit::textChanged, this, &EnteiToolsDialog::onChannelChanged);
+	// Channel is saved when dialog closes, no need for auto-save on each keystroke
 	connect(autoConnectCheckBox, &QCheckBox::toggled, this, &EnteiToolsDialog::onAutoConnectToggled);
 
 	// Initial state
@@ -194,6 +195,16 @@ void EnteiToolsDialog::loadSettings()
 
 	bool autoConnect = config_get_bool(config, "EnteiCaptionProvider", "AutoConnect");
 	autoConnectCheckBox->setChecked(autoConnect);
+
+	// Restore window geometry
+	const char *geometryStr = config_get_string(config, "EnteiCaptionProvider", "DialogGeometry");
+	if (geometryStr && strlen(geometryStr) > 0) {
+		QByteArray geometry = QByteArray::fromBase64(geometryStr);
+		restoreGeometry(geometry);
+	} else {
+		// Default size on first launch
+		resize(450, 400);
+	}
 }
 
 void EnteiToolsDialog::saveSettings()
@@ -221,6 +232,11 @@ void EnteiToolsDialog::saveSettings()
 	config_set_string(config, "EnteiCaptionProvider", "WebSocketUrl", urlStdString.c_str());
 	config_set_string(config, "EnteiCaptionProvider", "Channel", channelStdString.c_str());
 	config_set_bool(config, "EnteiCaptionProvider", "AutoConnect", autoConnectCheckBox->isChecked());
+
+	// Save window geometry
+	QByteArray geometry = saveGeometry();
+	std::string geometryStr = geometry.toBase64().constData();
+	config_set_string(config, "EnteiCaptionProvider", "DialogGeometry", geometryStr.c_str());
 
 	config_save(config);
 }
@@ -277,15 +293,10 @@ void EnteiToolsDialog::onWebSocketUrlChanged()
 	connectButton->setEnabled(!websocketUrlEdit->text().isEmpty() && !isConnected);
 }
 
-void EnteiToolsDialog::onChannelChanged()
-{
-	// Auto-save channel changes
-}
-
 void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
 {
 	if (enabled) {
-		logTextEdit->append("Auto-connect enabled - will connect when streaming starts");
+		logTextEdit->append("Auto-captions enabled - will start when streaming begins");
 
 		// If already streaming, connect immediately
 		if (obs_frontend_streaming_active()) {
@@ -294,7 +305,7 @@ void EnteiToolsDialog::onAutoConnectToggled(bool enabled)
 			}
 		}
 	} else {
-		logTextEdit->append("Auto-connect disabled");
+		logTextEdit->append("Auto-captions disabled");
 	}
 
 	// Update status to reflect auto-connect state
@@ -306,10 +317,10 @@ void EnteiToolsDialog::updateConnectionStatus(bool connected)
 	isConnected = connected;
 
 	if (connected) {
-		statusLabel->setText("Connected");
+		statusLabel->setText("Connected - Captions Active");
 		statusLabel->setStyleSheet("QLabel { font-weight: bold; color: green; }");
-		connectButton->setText("Stop Connection");
-		connectButton->setEnabled(true);
+		connectButton->setVisible(false);
+		disconnectButton->setVisible(true);
 		disconnectButton->setEnabled(true);
 	} else {
 		if (autoConnectCheckBox->isChecked()) {
@@ -319,9 +330,9 @@ void EnteiToolsDialog::updateConnectionStatus(bool connected)
 			statusLabel->setText("Not Connected");
 			statusLabel->setStyleSheet("QLabel { font-weight: bold; }");
 		}
-		connectButton->setText("Start Connection");
+		connectButton->setVisible(true);
 		connectButton->setEnabled(!websocketUrlEdit->text().isEmpty());
-		disconnectButton->setEnabled(false);
+		disconnectButton->setVisible(false);
 	}
 }
 
@@ -363,13 +374,12 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 	}
 }
 
-void EnteiToolsDialog::onWebSocketMessage(const char *message, size_t len)
+void EnteiToolsDialog::onWebSocketMessage(const QString &message)
 {
-	QString msg = QString::fromUtf8(message, len);
-	logTextEdit->append(QString("← %1").arg(msg));
+	logTextEdit->append(QString("← %1").arg(message));
 
 	// Process the message using Phoenix protocol
-	processPhoenixMessage(message);
+	processPhoenixMessage(message.toUtf8().constData());
 }
 
 QString EnteiToolsDialog::getNextMessageRef()
@@ -513,9 +523,7 @@ void EnteiToolsDialog::websocket_message_callback(const char *message, size_t le
 	// Copy the message since it might not be valid after this function returns
 	QString msg = QString::fromUtf8(message, len);
 
-	QMetaObject::invokeMethod(
-		dialog, [dialog, msg]() { dialog->onWebSocketMessage(msg.toUtf8().constData(), msg.length()); },
-		Qt::QueuedConnection);
+	QMetaObject::invokeMethod(dialog, [dialog, msg]() { dialog->onWebSocketMessage(msg); }, Qt::QueuedConnection);
 }
 
 void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event, void *private_data)
@@ -541,7 +549,7 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 			QMetaObject::invokeMethod(
 				dialog,
 				[dialog]() {
-					dialog->logTextEdit->append("Stream started - auto-connecting...");
+					dialog->logTextEdit->append("Stream started - starting captions...");
 					dialog->onConnectClicked();
 				},
 				Qt::QueuedConnection);
@@ -557,7 +565,7 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 			QMetaObject::invokeMethod(
 				dialog,
 				[dialog]() {
-					dialog->logTextEdit->append("Stream stopped - auto-disconnecting...");
+					dialog->logTextEdit->append("Stream stopped - stopping captions...");
 					dialog->onDisconnectClicked();
 				},
 				Qt::QueuedConnection);
