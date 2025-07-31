@@ -32,6 +32,7 @@ private slots:
 	void onWebSocketUrlChanged();
 	void onChannelChanged();
 	void onAutoConnectToggled(bool enabled);
+	void onCaptionTimer();
 
 private:
 	void setupUI();
@@ -71,5 +72,9 @@ private:
 
 	// Heartbeat timer for Phoenix connection
 	QTimer *heartbeatTimer;
-};
 
+	// Caption stream management
+	QTimer *captionTimer;
+	QString pendingCaptionText;
+	bool streamingActive;
+};

@@ -26,7 +26,9 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	  isConnected(false),
 	  message_ref_counter(0),
 	  channel_joined(false),
-	  heartbeatTimer(nullptr)
+	  heartbeatTimer(nullptr),
+	  captionTimer(nullptr),
+	  streamingActive(false)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
@@ -41,6 +43,11 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	heartbeatTimer->setInterval(30000); // 30 seconds
 	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendHeartbeat);
 
+	// Setup caption timer for continuous stream
+	captionTimer = new QTimer(this);
+	captionTimer->setInterval(1500); // 1.5 seconds
+	connect(captionTimer, &QTimer::timeout, this, &EnteiToolsDialog::onCaptionTimer);
+
 	// Register for OBS frontend events for auto-connect
 	obs_frontend_add_event_callback(obs_frontend_event_callback, this);
 
@@ -53,6 +60,9 @@ EnteiToolsDialog::~EnteiToolsDialog()
 	// Stop timers first to prevent callbacks after destruction starts
 	if (heartbeatTimer) {
 		heartbeatTimer->stop();
+	}
+	if (captionTimer) {
+		captionTimer->stop();
 	}
 
 	// Unregister from OBS frontend events
@@ -256,6 +266,9 @@ void EnteiToolsDialog::onDisconnectClicked()
 	if (heartbeatTimer) {
 		heartbeatTimer->stop();
 	}
+	if (captionTimer) {
+		captionTimer->stop();
+	}
 }
 
 void EnteiToolsDialog::onWebSocketUrlChanged()
@@ -325,6 +338,12 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 		// Start periodic heartbeat timer
 		heartbeatTimer->start();
 
+		// Start caption timer if we're already streaming
+		if (obs_frontend_streaming_active() && captionTimer) {
+			streamingActive = true;
+			captionTimer->start();
+		}
+
 		// Auto-join the specified channel
 		QString channel = channelEdit->text().trimmed();
 		if (!channel.isEmpty()) {
@@ -335,8 +354,12 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 		current_channel.clear();
 		channel_joined = false;
 
-		// Stop heartbeat timer
+		// Stop timers
 		heartbeatTimer->stop();
+		if (captionTimer) {
+			captionTimer->stop();
+		}
+		pendingCaptionText.clear();
 	}
 }
 
@@ -378,6 +401,30 @@ void EnteiToolsDialog::sendHeartbeat()
 		sendPhoenixMessage(heartbeat_json);
 		bfree(heartbeat_json);
 	}
+}
+
+void EnteiToolsDialog::onCaptionTimer()
+{
+	// Only send captions if we're streaming
+	obs_output_t *streaming_output = obs_frontend_get_streaming_output();
+	if (!streaming_output) {
+		return;
+	}
+
+	// Check if output is active
+	if (!obs_output_active(streaming_output)) {
+		obs_output_release(streaming_output);
+		return;
+	}
+
+	// Send caption (empty string maintains stream continuity)
+	// Duration is 2.0 seconds to overlap with next timer interval (1.5s)
+	obs_output_output_caption_text2(streaming_output, pendingCaptionText.toUtf8().constData(), 2.0);
+
+	// Clear the pending text after sending
+	pendingCaptionText.clear();
+
+	obs_output_release(streaming_output);
 }
 
 void EnteiToolsDialog::joinChannel(const QString &channel)
@@ -431,14 +478,8 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 					if (caption_text) {
 						logTextEdit->append(QString("Caption: %1").arg(caption_text));
 
-						// Send caption immediately to OBS
-						QByteArray utf8_text = QString::fromUtf8(caption_text).toUtf8();
-						obs_output_t *streaming_output = obs_frontend_get_streaming_output();
-						if (streaming_output) {
-							obs_output_output_caption_text2(streaming_output,
-											utf8_text.constData(), 3.0);
-							obs_output_release(streaming_output);
-						}
+						// Update pending caption text instead of sending immediately
+						pendingCaptionText = QString::fromUtf8(caption_text);
 					}
 				}
 			}
@@ -491,6 +532,11 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
+		dialog->streamingActive = true;
+		// Start caption timer when streaming starts
+		if (dialog->captionTimer && dialog->isConnected) {
+			dialog->captionTimer->start();
+		}
 		if (!dialog->isConnected) {
 			QMetaObject::invokeMethod(
 				dialog,
@@ -502,6 +548,11 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 		}
 		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
+		dialog->streamingActive = false;
+		// Stop caption timer when streaming stops
+		if (dialog->captionTimer) {
+			dialog->captionTimer->stop();
+		}
 		if (dialog->isConnected) {
 			QMetaObject::invokeMethod(
 				dialog,
