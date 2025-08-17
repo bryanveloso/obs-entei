@@ -427,12 +427,28 @@ void EnteiToolsDialog::onCaptionTimer()
 		return;
 	}
 
-	// Send caption (empty string maintains stream continuity)
+	// Send caption with current text
 	// Duration is 2.0 seconds to overlap with next timer interval (1.5s)
-	obs_output_output_caption_text2(streaming_output, pendingCaptionText.toUtf8().constData(), 2.0);
-
-	// Clear the pending text after sending
-	pendingCaptionText.clear();
+	// Don't clear - keep sending same text until new caption arrives
+	if (!pendingCaptionText.isEmpty()) {
+		// CEA-708 Caption Length Validation
+		// Limit to 96 characters total (approximately 32 chars per line for 3 lines)
+		const int MAX_CAPTION_LENGTH = 96;
+		QByteArray captionBytes = pendingCaptionText.toUtf8();
+		if (captionBytes.size() > MAX_CAPTION_LENGTH) {
+			captionBytes.truncate(MAX_CAPTION_LENGTH);
+			// Log truncation for debugging
+			logTextEdit->append(QString("⚠ Caption truncated to %1 chars").arg(MAX_CAPTION_LENGTH));
+		}
+		
+		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), 2.0);
+		// Debug log - remove after testing
+		static QString lastLogged;
+		if (pendingCaptionText != lastLogged) {
+			logTextEdit->append(QString("→ Sending caption: %1").arg(pendingCaptionText));
+			lastLogged = pendingCaptionText;
+		}
+	}
 
 	obs_output_release(streaming_output);
 }
@@ -476,11 +492,9 @@ void EnteiToolsDialog::processPhoenixMessage(const char *json)
 				logTextEdit->append(
 					QString("✗ Failed to join channel: %1").arg(status ? status : "unknown error"));
 			}
-		} else {
-			// Handle other message types (captions, etc.)
-			if (message.event && message.payload) {
-				const char *event = message.event;
-				(void)event; // May be used for different event types in future
+		} else if (message.event && strcmp(message.event, "new_transcription") == 0) {
+			// Handle transcription messages
+			if (message.payload) {
 				cJSON *text_item = cJSON_GetObjectItem(message.payload, "text");
 
 				if (cJSON_IsString(text_item)) {
