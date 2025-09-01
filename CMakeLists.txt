@@ -119,13 +119,7 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE
-    src/plugin-main.c
-    src/websocket-client.cpp
-    src/phoenix-protocol.c
-    src/cJSON.c
-    src/entei-tools.cpp
-    src/entei-dialog.cpp
+  PRIVATE src/plugin-main.c src/websocket-client.cpp src/cJSON.c src/entei-tools.cpp src/entei-dialog.cpp
 )
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

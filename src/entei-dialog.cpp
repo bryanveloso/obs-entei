@@ -1,6 +1,6 @@
 #include "entei-dialog.h"
 #include "websocket-client.h"
-#include "phoenix-protocol.h"
+#include "cJSON.h"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <util/config-file.h>
@@ -24,7 +24,6 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	: QDialog(parent),
 	  client(nullptr),
 	  isConnected(false),
-	  message_ref_counter(0),
 	  channel_joined(false),
 	  heartbeatTimer(nullptr),
 	  captionTimer(nullptr),
@@ -35,13 +34,10 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	setMinimumSize(400, 350);
 	// Don't set fixed size - will be restored from settings
 
-	// Generate a unique join reference for this session
-	join_ref = QString::number(QDateTime::currentMSecsSinceEpoch());
-
-	// Setup heartbeat timer (Phoenix typically uses 30 second intervals)
+	// Setup ping timer for WebSocket keepalive
 	heartbeatTimer = new QTimer(this);
 	heartbeatTimer->setInterval(30000); // 30 seconds
-	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendHeartbeat);
+	connect(heartbeatTimer, &QTimer::timeout, this, &EnteiToolsDialog::sendPing);
 
 	// Setup caption timer for continuous stream
 	captionTimer = new QTimer(this);
@@ -343,10 +339,12 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 	if (connected) {
 		logTextEdit->append("✓ Connected successfully");
 
-		// Send initial heartbeat to establish Phoenix connection
-		sendHeartbeat();
+		// Send initial connection message
+		const char *connect_json = "{\"type\":\"start_transcription\"}";
+		websocket_client_send(client, connect_json);
+		logTextEdit->append("→ Transcription started");
 
-		// Start periodic heartbeat timer
+		// Start periodic ping timer
 		heartbeatTimer->start();
 
 		// Start caption timer if we're already streaming
@@ -356,13 +354,9 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 		}
 
 		// Auto-join the specified channel
-		QString channel = channelEdit->text().trimmed();
-		if (!channel.isEmpty()) {
-			joinChannel(channel);
-		}
+		// Channel is now implicitly joined via connection
 	} else {
 		logTextEdit->append("✗ Connection failed or disconnected");
-		current_channel.clear();
 		channel_joined = false;
 
 		// Stop timers
@@ -378,39 +372,20 @@ void EnteiToolsDialog::onWebSocketMessage(const QString &message)
 {
 	logTextEdit->append(QString("← %1").arg(message));
 
-	// Process the message using Phoenix protocol
-	processPhoenixMessage(message.toUtf8().constData());
+	// Process the WebSocket message
+	processWebSocketMessage(message.toUtf8().constData());
 }
 
-QString EnteiToolsDialog::getNextMessageRef()
-{
-	return QString::number(++message_ref_counter);
-}
-
-void EnteiToolsDialog::sendPhoenixMessage(const char *json_message)
-{
-	if (!client || !isConnected || !json_message) {
-		return;
-	}
-
-	logTextEdit->append(QString("→ %1").arg(json_message));
-	websocket_client_send(client, json_message);
-}
-
-void EnteiToolsDialog::sendHeartbeat()
+void EnteiToolsDialog::sendPing()
 {
 	// Add defensive check in case timer fires after disconnect
 	if (!isConnected || !client) {
 		return;
 	}
 
-	QString msg_ref = getNextMessageRef();
-	char *heartbeat_json = phoenix_create_heartbeat_json(msg_ref.toUtf8().constData());
-
-	if (heartbeat_json) {
-		sendPhoenixMessage(heartbeat_json);
-		bfree(heartbeat_json);
-	}
+	const char *ping_json = "{\"type\":\"ping\"}";
+	websocket_client_send(client, ping_json);
+	logTextEdit->append("→ Ping sent");
 }
 
 void EnteiToolsDialog::onCaptionTimer()
@@ -440,7 +415,7 @@ void EnteiToolsDialog::onCaptionTimer()
 			// Log truncation for debugging
 			logTextEdit->append(QString("⚠ Caption truncated to %1 chars").arg(MAX_CAPTION_LENGTH));
 		}
-		
+
 		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), 2.0);
 		// Debug log - remove after testing
 		static QString lastLogged;
@@ -453,64 +428,49 @@ void EnteiToolsDialog::onCaptionTimer()
 	obs_output_release(streaming_output);
 }
 
-void EnteiToolsDialog::joinChannel(const QString &channel)
+void EnteiToolsDialog::processWebSocketMessage(const char *json)
 {
-	if (channel.isEmpty()) {
+	cJSON *root = cJSON_Parse(json);
+	if (!root) {
+		logTextEdit->append("✗ Failed to parse WebSocket message");
 		return;
 	}
 
-	QString msg_ref = getNextMessageRef();
-	cJSON *payload = cJSON_CreateObject();
-
-	char *join_json = phoenix_create_join_json(join_ref.toUtf8().constData(), msg_ref.toUtf8().constData(),
-						   channel.toUtf8().constData(), payload);
-
-	if (join_json) {
-		current_channel = channel;
-		sendPhoenixMessage(join_json);
-		bfree(join_json);
+	cJSON *type = cJSON_GetObjectItem(root, "type");
+	if (!type || !cJSON_IsString(type)) {
+		logTextEdit->append("✗ WebSocket message missing 'type' field");
+		cJSON_Delete(root);
+		return;
 	}
 
-	cJSON_Delete(payload);
-}
+	const char *message_type = cJSON_GetStringValue(type);
 
-void EnteiToolsDialog::processPhoenixMessage(const char *json)
-{
-	phoenix_message_t message;
-
-	if (phoenix_parse_message(json, &message)) {
-		if (phoenix_is_heartbeat_reply(&message)) {
-			logTextEdit->append("✓ Heartbeat acknowledged");
-		} else if (phoenix_is_join_reply(&message)) {
-			const char *status = phoenix_get_reply_status(&message);
-			if (status && strcmp(status, "ok") == 0) {
-				channel_joined = true;
-				logTextEdit->append(
-					QString("✓ Joined channel: %1").arg(message.topic ? message.topic : "unknown"));
-			} else {
-				channel_joined = false;
-				logTextEdit->append(
-					QString("✗ Failed to join channel: %1").arg(status ? status : "unknown error"));
-			}
-		} else if (message.event && strcmp(message.event, "new_transcription") == 0) {
-			// Handle transcription messages
-			if (message.payload) {
-				cJSON *text_item = cJSON_GetObjectItem(message.payload, "text");
-
-				if (cJSON_IsString(text_item)) {
-					const char *caption_text = cJSON_GetStringValue(text_item);
-					if (caption_text) {
-						logTextEdit->append(QString("Caption: %1").arg(caption_text));
-
-						// Update pending caption text instead of sending immediately
-						pendingCaptionText = QString::fromUtf8(caption_text);
-					}
+	if (strcmp(message_type, "connected") == 0) {
+		logTextEdit->append("✓ WebSocket connected");
+		channel_joined = true;
+	} else if (strcmp(message_type, "transcription") == 0) {
+		// Handle transcription messages
+		cJSON *data = cJSON_GetObjectItem(root, "data");
+		if (data) {
+			cJSON *text_item = cJSON_GetObjectItem(data, "text");
+			if (cJSON_IsString(text_item)) {
+				const char *caption_text = cJSON_GetStringValue(text_item);
+				if (caption_text) {
+					logTextEdit->append(QString("Caption: %1").arg(caption_text));
+					// Update pending caption text instead of sending immediately
+					pendingCaptionText = QString::fromUtf8(caption_text);
 				}
 			}
 		}
-
-		phoenix_message_free(&message);
+	} else if (strcmp(message_type, "error") == 0) {
+		cJSON *message = cJSON_GetObjectItem(root, "message");
+		const char *error_msg = cJSON_IsString(message) ? cJSON_GetStringValue(message) : "Unknown error";
+		logTextEdit->append(QString("✗ Server error: %1").arg(error_msg));
+	} else if (strcmp(message_type, "pong") == 0) {
+		logTextEdit->append("✓ Pong received");
 	}
+
+	cJSON_Delete(root);
 }
 
 void EnteiToolsDialog::websocket_connect_callback(bool connected, void *user_data)

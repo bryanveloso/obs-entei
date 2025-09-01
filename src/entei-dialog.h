@@ -41,12 +41,9 @@ private:
 	void onWebSocketConnected(bool connected);
 	void onWebSocketMessage(const QString &message);
 
-	// Phoenix protocol helpers
-	QString getNextMessageRef();
-	void sendPhoenixMessage(const char *json_message);
-	void sendHeartbeat();
-	void joinChannel(const QString &channel);
-	void processPhoenixMessage(const char *json);
+	// WebSocket protocol helpers
+	void sendPing();
+	void processWebSocketMessage(const char *json);
 
 	static void websocket_connect_callback(bool connected, void *user_data);
 	static void websocket_message_callback(const char *message, size_t len, void *user_data);
@@ -63,13 +60,10 @@ private:
 	struct websocket_client *client;
 	bool isConnected;
 
-	// Phoenix protocol state
-	int message_ref_counter;
-	QString join_ref;
-	QString current_channel;
+	// WebSocket state
 	bool channel_joined;
 
-	// Heartbeat timer for Phoenix connection
+	// Ping timer for WebSocket connection
 	QTimer *heartbeatTimer;
 
 	// Caption stream management
