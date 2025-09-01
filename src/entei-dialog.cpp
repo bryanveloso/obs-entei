@@ -396,15 +396,44 @@ void EnteiToolsDialog::onCaptionTimer()
 	// Duration is 2.0 seconds to overlap with next timer interval (1.5s)
 	// Don't clear - keep sending same text until new caption arrives
 	if (!pendingCaptionText.isEmpty()) {
-		// CEA-708 Caption Length Validation
-		// Limit to 96 characters total (approximately 32 chars per line for 3 lines)
-		const int MAX_CAPTION_LENGTH = 96;
-		QByteArray captionBytes = pendingCaptionText.toUtf8();
-		if (captionBytes.size() > MAX_CAPTION_LENGTH) {
-			captionBytes.truncate(MAX_CAPTION_LENGTH);
-			// Log truncation for debugging
-			logTextEdit->append(QString("⚠ Caption truncated to %1 chars").arg(MAX_CAPTION_LENGTH));
+		// CEA-708 Caption Formatting for Twitch Compliance
+		// Break text into lines of max 32 characters each (max 3 lines = 96 chars total)
+		const int MAX_LINE_LENGTH = 32;
+		const int MAX_LINES = 3;
+		QString formattedCaption = pendingCaptionText;
+
+		// Simple word-wrap to avoid breaking words
+		QStringList words = formattedCaption.split(' ', Qt::SkipEmptyParts);
+		QStringList lines;
+		QString currentLine;
+
+		for (const QString &word : words) {
+			QString testLine = currentLine.isEmpty() ? word : currentLine + " " + word;
+			if (testLine.length() <= MAX_LINE_LENGTH) {
+				currentLine = testLine;
+			} else {
+				if (!currentLine.isEmpty()) {
+					lines.append(currentLine);
+					currentLine = word;
+				} else {
+					// Single word longer than line limit - truncate it
+					lines.append(word.left(MAX_LINE_LENGTH));
+					currentLine.clear();
+				}
+			}
 		}
+		if (!currentLine.isEmpty()) {
+			lines.append(currentLine);
+		}
+
+		// Limit to max 3 lines
+		if (lines.size() > MAX_LINES) {
+			lines = lines.mid(0, MAX_LINES);
+			logTextEdit->append(QString("⚠ Caption wrapped to %1 lines").arg(MAX_LINES));
+		}
+
+		QString finalCaption = lines.join("\n");
+		QByteArray captionBytes = finalCaption.toUtf8();
 
 		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), 2.0);
 		// Debug log - remove after testing
