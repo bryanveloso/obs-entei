@@ -98,16 +98,8 @@ void EnteiToolsDialog::setupUI()
 	connectionLayout->addWidget(urlLabel, 0, 0);
 
 	websocketUrlEdit = new QLineEdit(this);
-	websocketUrlEdit->setPlaceholderText("ws://saya:7175/socket/websocket?vsn=2.0.0");
+	websocketUrlEdit->setPlaceholderText("ws://saya:7175/ws/captions");
 	connectionLayout->addWidget(websocketUrlEdit, 0, 1);
-
-	QLabel *channelLabel = new QLabel("Channel:", this);
-	channelLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-	connectionLayout->addWidget(channelLabel, 1, 0);
-
-	channelEdit = new QLineEdit(this);
-	channelEdit->setPlaceholderText("transcription:live");
-	connectionLayout->addWidget(channelEdit, 1, 1);
 
 	autoConnectCheckBox = new QCheckBox("Auto-start captions when streaming begins", this);
 	connectionLayout->addWidget(autoConnectCheckBox, 2, 0, 1, 2);
@@ -218,15 +210,13 @@ void EnteiToolsDialog::saveSettings()
 	}
 
 	// Ensure UI elements exist before accessing them
-	if (!websocketUrlEdit || !channelEdit || !autoConnectCheckBox) {
+	if (!websocketUrlEdit || !autoConnectCheckBox) {
 		obs_log(LOG_WARNING, "UI elements not available for saving settings");
 		return;
 	}
 
 	std::string urlStdString = websocketUrlEdit->text().toStdString();
-	std::string channelStdString = channelEdit->text().toStdString();
 	config_set_string(config, "EnteiCaptionProvider", "WebSocketUrl", urlStdString.c_str());
-	config_set_string(config, "EnteiCaptionProvider", "Channel", channelStdString.c_str());
 	config_set_bool(config, "EnteiCaptionProvider", "AutoConnect", autoConnectCheckBox->isChecked());
 
 	// Save window geometry

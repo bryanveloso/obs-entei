@@ -50,7 +50,6 @@ private:
 	static void obs_frontend_event_callback(enum obs_frontend_event event, void *private_data);
 
 	QLineEdit *websocketUrlEdit;
-	QLineEdit *channelEdit;
 	QPushButton *connectButton;
 	QPushButton *disconnectButton;
 	QLabel *statusLabel;
