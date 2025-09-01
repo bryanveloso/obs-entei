@@ -176,11 +176,6 @@ void EnteiToolsDialog::loadSettings()
 		websocketUrlEdit->setText(url);
 	}
 
-	const char *channel = config_get_string(config, "EnteiCaptionProvider", "Channel");
-	if (channel && strlen(channel) > 0) {
-		channelEdit->setText(channel);
-	}
-
 	bool autoConnect = config_get_bool(config, "EnteiCaptionProvider", "AutoConnect");
 	autoConnectCheckBox->setChecked(autoConnect);
 
