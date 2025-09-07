@@ -48,7 +48,10 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	obs_frontend_add_event_callback(obs_frontend_event_callback, this);
 
 	setupUI();
-	loadSettings();
+	// Only load settings if UI was created successfully
+	if (websocketUrlEdit && autoConnectCheckBox) {
+		loadSettings();
+	}
 }
 
 EnteiToolsDialog::~EnteiToolsDialog()
@@ -65,7 +68,6 @@ EnteiToolsDialog::~EnteiToolsDialog()
 	obs_frontend_remove_event_callback(obs_frontend_event_callback, this);
 
 	if (client) {
-		websocket_client_disconnect(client);
 		websocket_client_destroy(client);
 		client = nullptr;
 	}
@@ -75,7 +77,7 @@ void EnteiToolsDialog::closeEvent(QCloseEvent *event)
 {
 	// Disconnect first to avoid any signals during shutdown
 	if (isConnected && client) {
-		disconnect();
+		onDisconnectClicked();
 	}
 
 	saveSettings();
@@ -171,6 +173,12 @@ void EnteiToolsDialog::loadSettings()
 		return;
 	}
 
+	// Defensive checks for UI elements
+	if (!websocketUrlEdit || !autoConnectCheckBox) {
+		obs_log(LOG_WARNING, "UI elements not initialized in loadSettings");
+		return;
+	}
+
 	const char *url = config_get_string(config, "EnteiCaptionProvider", "WebSocketUrl");
 	if (url && strlen(url) > 0) {
 		websocketUrlEdit->setText(url);
@@ -179,11 +187,21 @@ void EnteiToolsDialog::loadSettings()
 	bool autoConnect = config_get_bool(config, "EnteiCaptionProvider", "AutoConnect");
 	autoConnectCheckBox->setChecked(autoConnect);
 
-	// Restore window geometry
+	// Restore window geometry with error handling
 	const char *geometryStr = config_get_string(config, "EnteiCaptionProvider", "DialogGeometry");
 	if (geometryStr && strlen(geometryStr) > 0) {
-		QByteArray geometry = QByteArray::fromBase64(geometryStr);
-		restoreGeometry(geometry);
+		try {
+			QByteArray geometry = QByteArray::fromBase64(geometryStr);
+			if (!geometry.isEmpty() && geometry.size() < 10000) { // Sanity check size
+				restoreGeometry(geometry);
+			} else {
+				obs_log(LOG_WARNING, "Invalid geometry data, using default size");
+				resize(450, 400);
+			}
+		} catch (...) {
+			obs_log(LOG_WARNING, "Exception restoring geometry, using default size");
+			resize(450, 400);
+		}
 	} else {
 		// Default size on first launch
 		resize(450, 400);
@@ -224,9 +242,21 @@ void EnteiToolsDialog::saveSettings()
 
 void EnteiToolsDialog::onConnectClicked()
 {
-	QString url = websocketUrlEdit->text();
+	QString url = websocketUrlEdit->text().trimmed();
 	if (url.isEmpty()) {
 		logTextEdit->append("Error: WebSocket URL is empty");
+		return;
+	}
+
+	// Basic URL validation to prevent crashes
+	if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
+		logTextEdit->append("Error: URL must start with ws:// or wss://");
+		return;
+	}
+
+	// Check for extremely long URLs that could cause buffer overflows
+	if (url.length() > 2048) {
+		logTextEdit->append("Error: URL is too long");
 		return;
 	}
 
