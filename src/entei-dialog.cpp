@@ -454,19 +454,12 @@ void EnteiToolsDialog::onCaptionTimer()
 		// Limit to max 3 lines
 		if (lines.size() > MAX_LINES) {
 			lines = lines.mid(0, MAX_LINES);
-			logTextEdit->append(QString("⚠ Caption wrapped to %1 lines").arg(MAX_LINES));
 		}
 
 		QString finalCaption = lines.join("\n");
 		QByteArray captionBytes = finalCaption.toUtf8();
 
 		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), 2.0);
-		// Debug log - remove after testing
-		static QString lastLogged;
-		if (pendingCaptionText != lastLogged) {
-			logTextEdit->append(QString("→ Sending caption: %1").arg(pendingCaptionText));
-			lastLogged = pendingCaptionText;
-		}
 	}
 
 	obs_output_release(streaming_output);
