@@ -385,7 +385,8 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 
 void EnteiToolsDialog::onWebSocketMessage(const QString &message)
 {
-	logTextEdit->append(QString("← %1").arg(message));
+	// Don't log raw messages - too noisy.
+	// logTextEdit->append(QString("← %1").arg(message));
 
 	// Process the WebSocket message
 	processWebSocketMessage(message.toUtf8().constData());
@@ -400,7 +401,6 @@ void EnteiToolsDialog::sendPing()
 
 	const char *ping_json = "{\"type\":\"ping\"}";
 	websocket_client_send(client, ping_json);
-	logTextEdit->append("→ Ping sent");
 }
 
 void EnteiToolsDialog::onCaptionTimer()
@@ -493,9 +493,28 @@ void EnteiToolsDialog::processWebSocketMessage(const char *json)
 			if (cJSON_IsString(text_item)) {
 				const char *caption_text = cJSON_GetStringValue(text_item);
 				if (caption_text) {
-					logTextEdit->append(QString("Caption: %1").arg(caption_text));
-					// Update pending caption text instead of sending immediately
-					pendingCaptionText = QString::fromUtf8(caption_text);
+					QString newCaption = QString::fromUtf8(caption_text);
+					// Only log if caption text changed (avoid duplicate spam)
+					static QString lastCaption;
+					static int duplicateCount = 0;
+					
+					if (newCaption != lastCaption) {
+						if (duplicateCount > 0) {
+							logTextEdit->append(QString("  (received %1 times)").arg(duplicateCount + 1));
+							duplicateCount = 0;
+						}
+						// Truncate long captions in log for readability
+						QString logText = newCaption.length() > 50 
+							? newCaption.left(47) + "..." 
+							: newCaption;
+						logTextEdit->append(QString("📝 %1").arg(logText));
+						lastCaption = newCaption;
+					} else {
+						duplicateCount++;
+					}
+					
+					// Update pending caption text
+					pendingCaptionText = newCaption;
 				}
 			}
 		}
@@ -504,7 +523,7 @@ void EnteiToolsDialog::processWebSocketMessage(const char *json)
 		const char *error_msg = cJSON_IsString(message) ? cJSON_GetStringValue(message) : "Unknown error";
 		logTextEdit->append(QString("✗ Server error: %1").arg(error_msg));
 	} else if (strcmp(message_type, "pong") == 0) {
-		logTextEdit->append("✓ Pong received");
+		// Don't log pongs - too noisy
 	}
 
 	cJSON_Delete(root);
