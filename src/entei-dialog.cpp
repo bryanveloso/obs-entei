@@ -16,6 +16,7 @@
 #include <QtWidgets/QGroupBox>
 #include <QtWidgets/QCheckBox>
 #include <QtCore/QDateTime>
+#include <QtCore/QMutableMapIterator>
 #include <QtGui/QCloseEvent>
 #include <chrono>
 #include <functional>
@@ -380,6 +381,8 @@ void EnteiToolsDialog::onWebSocketConnected(bool connected)
 			captionTimer->stop();
 		}
 		pendingCaptionText.clear();
+		segments.clear();
+		lastComposedCaption.clear();
 	}
 }
 
@@ -486,35 +489,75 @@ void EnteiToolsDialog::processWebSocketMessage(const char *json)
 		logTextEdit->append("✓ WebSocket connected");
 		channel_joined = true;
 	} else if (strcmp(message_type, "transcription") == 0) {
-		// Handle transcription messages
+		// Handle transcription messages with WhisperLive segment support
 		cJSON *data = cJSON_GetObjectItem(root, "data");
 		if (data) {
 			cJSON *text_item = cJSON_GetObjectItem(data, "text");
 			if (cJSON_IsString(text_item)) {
 				const char *caption_text = cJSON_GetStringValue(text_item);
 				if (caption_text) {
-					QString newCaption = QString::fromUtf8(caption_text);
-					// Only log if caption text changed (avoid duplicate spam)
-					static QString lastCaption;
-					static int duplicateCount = 0;
-					
-					if (newCaption != lastCaption) {
-						if (duplicateCount > 0) {
-							logTextEdit->append(QString("  (received %1 times)").arg(duplicateCount + 1));
-							duplicateCount = 0;
+					QString text = QString::fromUtf8(caption_text);
+
+					// Extract segment metadata if available (WhisperLive protocol)
+					cJSON *segment_id_item = cJSON_GetObjectItem(data, "segment_id");
+					cJSON *is_revision_item = cJSON_GetObjectItem(data, "is_revision");
+					cJSON *is_final_item = cJSON_GetObjectItem(data, "is_final");
+
+					if (segment_id_item && cJSON_IsNumber(segment_id_item)) {
+						// WhisperLive segment-based caption
+						double segment_id = cJSON_GetNumberValue(segment_id_item);
+						bool is_revision = is_revision_item ? cJSON_IsTrue(is_revision_item)
+										    : false;
+						bool is_final = is_final_item ? cJSON_IsTrue(is_final_item) : true;
+						qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
+
+						// Check if this is an update to existing segment
+						bool isUpdate = segments.contains(segment_id);
+
+						// Store/update segment
+						segments[segment_id] = {text, segment_id, is_final, is_revision,
+									timestamp};
+
+						// Build combined caption from all segments
+						QString composedCaption = buildCaptionFromSegments();
+
+						// Only update if the composed text changed
+						if (composedCaption != lastComposedCaption) {
+							pendingCaptionText = composedCaption;
+							lastComposedCaption = composedCaption;
+
+							// Log the change
+							QString logText = composedCaption.length() > 50
+										  ? composedCaption.left(47) + "..."
+										  : composedCaption;
+							QString statusIcon = is_final ? "📝" : "✏️";
+							QString updateType = isUpdate ? " (revised)" : "";
+							logTextEdit->append(QString("%1 %2%3")
+										    .arg(statusIcon)
+										    .arg(logText)
+										    .arg(updateType));
 						}
-						// Truncate long captions in log for readability
-						QString logText = newCaption.length() > 50 
-							? newCaption.left(47) + "..." 
-							: newCaption;
-						logTextEdit->append(QString("📝 %1").arg(logText));
-						lastCaption = newCaption;
 					} else {
-						duplicateCount++;
+						// Legacy simple caption format
+						static QString lastCaption;
+						static int duplicateCount = 0;
+
+						if (text != lastCaption) {
+							if (duplicateCount > 0) {
+								logTextEdit->append(QString("  (received %1 times)")
+											    .arg(duplicateCount + 1));
+								duplicateCount = 0;
+							}
+							// Truncate long captions in log for readability
+							QString logText = text.length() > 50 ? text.left(47) + "..."
+											     : text;
+							logTextEdit->append(QString("📝 %1").arg(logText));
+							lastCaption = text;
+							pendingCaptionText = text;
+						} else {
+							duplicateCount++;
+						}
 					}
-					
-					// Update pending caption text
-					pendingCaptionText = newCaption;
 				}
 			}
 		}
@@ -604,4 +647,30 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 	default:
 		break;
 	}
+}
+
+QString EnteiToolsDialog::buildCaptionFromSegments()
+{
+	// Remove old segments (older than 10 seconds)
+	qint64 now = QDateTime::currentMSecsSinceEpoch();
+	const qint64 SEGMENT_TIMEOUT = 10000; // 10 seconds
+
+	QMutableMapIterator<double, CaptionSegment> it(segments);
+	while (it.hasNext()) {
+		it.next();
+		if (now - it.value().timestamp > SEGMENT_TIMEOUT) {
+			it.remove();
+		}
+	}
+
+	// Build combined caption from remaining segments
+	QString combinedCaption;
+	for (auto it = segments.begin(); it != segments.end(); ++it) {
+		if (!combinedCaption.isEmpty()) {
+			combinedCaption += " ";
+		}
+		combinedCaption += it.value().text;
+	}
+
+	return combinedCaption;
 }

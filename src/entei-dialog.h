@@ -3,6 +3,7 @@
 #include <QtWidgets/QDialog>
 #include <QtCore/QTimer>
 #include <QtCore/QString>
+#include <QtCore/QMap>
 #include <obs-frontend-api.h>
 
 QT_BEGIN_NAMESPACE
@@ -69,4 +70,16 @@ private:
 	QTimer *captionTimer;
 	QString pendingCaptionText;
 	bool streamingActive;
+
+	// WhisperLive segment tracking
+	struct CaptionSegment {
+		QString text;
+		double segment_id;
+		bool is_final;
+		bool is_revision;
+		qint64 timestamp;
+	};
+	QMap<double, CaptionSegment> segments;
+	QString lastComposedCaption;
+	QString buildCaptionFromSegments();
 };
