@@ -18,6 +18,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QMutableMapIterator>
 #include <QtGui/QCloseEvent>
+#include <QtGui/QShowEvent>
 #include <chrono>
 #include <functional>
 
@@ -77,13 +78,19 @@ EnteiToolsDialog::~EnteiToolsDialog()
 
 void EnteiToolsDialog::closeEvent(QCloseEvent *event)
 {
-	// Disconnect first to avoid any signals during shutdown
-	if (isConnected && client) {
-		onDisconnectClicked();
-	}
+	// Just hide the dialog instead of closing it
+	event->ignore();
+	hide();
 
+	// Save settings when hiding
 	saveSettings();
-	QDialog::closeEvent(event);
+}
+
+void EnteiToolsDialog::showEvent(QShowEvent *event)
+{
+	// Reload settings each time dialog is shown
+	loadSettings();
+	QDialog::showEvent(event);
 }
 
 void EnteiToolsDialog::setupUI()
@@ -640,6 +647,14 @@ void EnteiToolsDialog::obs_frontend_event_callback(enum obs_frontend_event event
 	}
 
 	switch (event) {
+	case OBS_FRONTEND_EVENT_EXIT:
+		// Perform cleanup when OBS is exiting
+		if (dialog->isConnected && dialog->client) {
+			websocket_client_destroy(dialog->client);
+			dialog->client = nullptr;
+			dialog->isConnected = false;
+		}
+		break;
 	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
 		dialog->streamingActive = true;
 		// Start caption timer when streaming starts
