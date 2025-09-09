@@ -70,6 +70,7 @@ private:
 	QTimer *captionTimer;
 	QString pendingCaptionText;
 	bool streamingActive;
+	qint64 lastCaptionSentTime; // Track when we last sent a caption to OBS
 
 	// WhisperLive segment tracking
 	struct CaptionSegment {

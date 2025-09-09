@@ -28,7 +28,8 @@ EnteiToolsDialog::EnteiToolsDialog(QWidget *parent)
 	  channel_joined(false),
 	  heartbeatTimer(nullptr),
 	  captionTimer(nullptr),
-	  streamingActive(false)
+	  streamingActive(false),
+	  lastCaptionSentTime(0)
 {
 	setWindowTitle("Entei Caption Provider");
 	setModal(false);
@@ -420,10 +421,18 @@ void EnteiToolsDialog::onCaptionTimer()
 		return;
 	}
 
+	// Apply debouncing to prevent too frequent caption updates
+	// obs-localvocal uses 500ms, but we'll use 1000ms for smoother viewing
+	qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if (now - lastCaptionSentTime < 1000) {
+		obs_output_release(streaming_output);
+		return;
+	}
+
 	// Send caption with current text
-	// Duration is 2.0 seconds to overlap with next timer interval (1.5s)
 	// Don't clear - keep sending same text until new caption arrives
 	if (!pendingCaptionText.isEmpty()) {
+		lastCaptionSentTime = now;
 		// CEA-708 Caption Formatting for Twitch Compliance
 		// Break text into lines of max 32 characters each (max 3 lines = 96 chars total)
 		const int MAX_LINE_LENGTH = 32;
@@ -462,7 +471,19 @@ void EnteiToolsDialog::onCaptionTimer()
 		QString finalCaption = lines.join("\n");
 		QByteArray captionBytes = finalCaption.toUtf8();
 
-		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), 2.0);
+		// Clamp duration between 2-7 seconds like obs-localvocal does
+		// Use 3.5 seconds as a good middle ground for caption duration
+		const double caption_duration = 3.5;
+		obs_output_output_caption_text2(streaming_output, captionBytes.constData(), caption_duration);
+
+		// Debug: Log actual caption sends with timestamp
+		static qint64 lastLogTime = 0;
+		qint64 now = QDateTime::currentMSecsSinceEpoch();
+		if (now - lastLogTime > 5000) { // Log every 5 seconds to avoid spam
+			obs_log(LOG_INFO, "[Entei] Sending caption at %lld: %s", now,
+				captionBytes.left(50).constData());
+			lastLogTime = now;
+		}
 	}
 
 	obs_output_release(streaming_output);
@@ -521,10 +542,17 @@ void EnteiToolsDialog::processWebSocketMessage(const char *json)
 						// Build combined caption from all segments
 						QString composedCaption = buildCaptionFromSegments();
 
-						// Only update if the composed text changed
-						if (composedCaption != lastComposedCaption) {
+						// Only update caption if this is a final segment or if enough time has passed
+						// This prevents too frequent updates from partial segments
+						static qint64 lastCaptionUpdate = 0;
+						qint64 timeSinceUpdate = timestamp - lastCaptionUpdate;
+
+						// Update if: final segment, OR partial but 500ms passed (like obs-localvocal)
+						if (composedCaption != lastComposedCaption &&
+						    (is_final || timeSinceUpdate > 500)) {
 							pendingCaptionText = composedCaption;
 							lastComposedCaption = composedCaption;
+							lastCaptionUpdate = timestamp;
 
 							// Log the change
 							QString logText = composedCaption.length() > 50
